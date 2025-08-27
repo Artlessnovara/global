@@ -119,73 +119,139 @@ body:has(.main-nav) {
     padding: 0;
 }
 
-/* Stories Bar */
+/* Stories Bar -- NEW STYLES */
 .stories-bar {
     display: flex;
-    gap: 15px;
+    gap: 10px;
     padding: 15px;
     background-color: #fff;
     border: 1px solid #dbdbdb;
     border-radius: 8px;
     margin-bottom: 25px;
     overflow-x: auto;
+    /* Hide scrollbar for a cleaner look */
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+.stories-bar::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, and Opera */
 }
 
-.story {
-    text-align: center;
+.story-card {
+    flex: 0 0 110px; /* Do not grow, do not shrink, base width */
+    height: 190px;
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
     cursor: pointer;
-    flex-shrink: 0;
+    transition: transform 0.2s ease-in-out;
+    text-decoration: none;
+    color: inherit;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
 
-.story-avatar {
-    width: 72px; /* Increased size */
-    height: 72px; /* Increased size */
-    border-radius: 50%;
-    padding: 3px;
-    background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+.story-card:hover {
+    transform: scale(1.03);
+}
+
+/* Add Story Card Specifics */
+.add-story-card {
+    background-color: #f0f2f5;
     display: flex;
+    flex-direction: column;
+}
+.add-story-img-placeholder {
+    height: 125px;
+    width: 100%;
+    overflow: hidden;
+}
+.add-story-img-placeholder img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.add-story-footer {
+    height: 65px;
+    display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
+    text-align: center;
+    font-weight: 600;
+    font-size: 13px;
     position: relative;
 }
-
-.story.add-story .story-avatar {
-    border-radius: 12px; /* Makes it a square with rounded corners */
-    background: none;
-    border: 1px dashed #ccc;
-}
-
-.story-avatar img {
-    width: 66px; /* Increased size */
-    height: 66px; /* Increased size */
+.add-story-plus-icon {
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
-    border: 2px solid #fff;
-}
-
-.story-username {
-    font-size: 13px; /* Slightly larger */
-    margin-top: 6px;
-    display: block;
-    max-width: 80px; /* Increased max-width */
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.add-story .add-icon {
-    position: absolute;
-    bottom: 0;
-    right: 0;
     background-color: #0095f6;
     color: white;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 16px;
-    border: 2px solid white;
+    font-size: 24px;
+    font-weight: bold;
+    border: 4px solid #fff;
+    position: absolute;
+    top: -20px; /* Position it overlapping the image */
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+/* User Story Card Specifics */
+.user-story-card {
+    color: #fff;
+}
+.user-story-preview {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+.user-story-preview::after { /* Add a gradient overlay for text readability */
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 50%;
+    background: linear-gradient(to top, rgba(0,0,0,0.5), transparent);
+}
+.user-story-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.user-story-avatar {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid #0095f6;
+    padding: 2px;
+    background-color: #fff;
+    z-index: 2;
+}
+.user-story-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+.user-story-name {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    text-align: center;
+    z-index: 2;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
 }
 
 /* Flash Messages */

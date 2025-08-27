@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ story.author.username }}'s Story - GLOOBA</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <style>
+        body {
+            background-color: #1a1a1a;
+            margin: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        .story-viewer-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .story-content {
+            position: relative;
+            height: 95vh;
+            max-width: 540px; /* Aspect ratio similar to a phone screen */
+            width: auto;
+            aspect-ratio: 9 / 16;
+            background-color: #000;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .story-content img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .story-header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 15px;
+            box-sizing: border-box;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .story-author-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+        }
+        .story-author-info {
+            color: #fff;
+        }
+        .story-author-info .name {
+            font-weight: bold;
+        }
+        .story-author-info .time {
+            font-size: 12px;
+            color: #ccc;
+        }
+        .close-story-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 24px;
+            color: #fff;
+            text-decoration: none;
+            background-color: rgba(0,0,0,0.5);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div class="story-viewer-container">
+        <div class="story-content">
+            <div class="story-header">
+                <img src="https://i.pravatar.cc/150?u={{ story.author.username }}" alt="{{ story.author.username }}" class="story-author-avatar">
+                <div class="story-author-info">
+                    <div class="name">{{ story.author.username }}</div>
+                    <div class="time">{{ story.created_at | humanize_time }}</div>
+                </div>
+            </div>
+
+            <a href="{{ url_for('home') }}" class="close-story-btn">&times;</a>
+
+            <img src="{{ url_for('static', filename=story.media_path) }}" alt="Story by {{ story.author.username }}">
+        </div>
+    </div>
+</body>
+</html>

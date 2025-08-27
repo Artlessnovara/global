@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, date, timezone
 from flask import Flask, render_template, request, redirect, url_for, session, flash, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 import click
 from flask.cli import with_appcontext
 from functools import wraps
@@ -351,6 +352,39 @@ def home():
     posts = Post.query.order_by(Post.created_at.desc()).all()
     return render_template('home.html', stories=stories, posts=posts)
 
+@app.route('/create_story', methods=['GET', 'POST'])
+@login_required
+def create_story():
+    if request.method == 'POST':
+        if 'story_file' not in request.files:
+            flash('No file part', 'error')
+            return redirect(request.url)
+        file = request.files['story_file']
+        if file.filename == '':
+            flash('No selected file', 'error')
+            return redirect(request.url)
+        if file:
+            filename = secure_filename(file.filename)
+            # Ensure stories directory exists
+            stories_dir = os.path.join(app.static_folder, 'stories')
+            os.makedirs(stories_dir, exist_ok=True)
+
+            # To make filenames unique, prepend user_id and timestamp
+            unique_filename = f"{g.user.id}_{int(datetime.now(timezone.utc).timestamp())}_{filename}"
+            file_path = os.path.join(stories_dir, unique_filename)
+            file.save(file_path)
+
+            # Create story record in the database
+            relative_path = os.path.join('stories', unique_filename)
+            new_story = Story(user_id=g.user.id, media_path=relative_path)
+            db.session.add(new_story)
+            db.session.commit()
+
+            flash('Your story has been uploaded!', 'success')
+            return redirect(url_for('home'))
+
+    return render_template('create_story.html')
+
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
@@ -501,6 +535,14 @@ def discover_modes():
     """Displays all available modes for users to browse."""
     all_modes = Mode.query.order_by(Mode.name).all()
     return render_template('discover_modes.html', modes=all_modes)
+
+@app.route('/story/<int:story_id>')
+@login_required
+def story_viewer(story_id):
+    story = db.get_or_404(Story, story_id)
+    # Optional: Add logic to ensure only followers can view, or that it hasn't expired.
+    # For now, we'll keep it simple.
+    return render_template('story_viewer.html', story=story)
 
 # --- SOCKETIO EVENTS ---
 @socketio.on('send_message')

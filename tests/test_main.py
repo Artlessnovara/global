@@ -1,6 +1,7 @@
 import pytest
 from tests.test_auth import register_user, login
-from app import Post, User, db, Mode
+from app import Post, User, db, Mode, Story
+import io
 
 def test_loading_page(client):
     """Test that the loading page is the first page seen."""
@@ -129,3 +130,62 @@ def test_discover_modes_page(client, seed_db):
     assert b'Education' in response.data
     assert b'Networking' in response.data
     assert b'Fun' in response.data
+
+def test_create_story(client):
+    """Test that a user can create a story."""
+    register_user(username='storyteller', password='password')
+    login(client, 'storyteller', 'password')
+
+    # Create a dummy file in memory
+    dummy_file = io.BytesIO(b"this is a fake image")
+
+    response = client.post('/create_story', data={
+        'story_file': (dummy_file, 'test.jpg')
+    }, content_type='multipart/form-data', follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b'Your story has been uploaded!' in response.data
+
+    story = Story.query.first()
+    assert story is not None
+    assert story.author.username == 'storyteller'
+    assert 'test.jpg' in story.media_path
+
+def test_home_page_story_display(client):
+    """Test that the home page only shows stories from followed users."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2_followed = register_user(username='user2', email='user2@test.com', password='pw')
+    user3_unfollowed = register_user(username='user3', email='user3@test.com', password='pw')
+
+    # user1 follows user2
+    user1.follow(user2_followed)
+    db.session.commit()
+
+    # user2 and user3 create stories
+    story_followed = Story(author=user2_followed, media_path='stories/followed.jpg')
+    story_unfollowed = Story(author=user3_unfollowed, media_path='stories/unfollowed.jpg')
+    db.session.add_all([story_followed, story_unfollowed])
+    db.session.commit()
+
+    login(client, 'user1', 'pw')
+    response = client.get('/home')
+
+    assert response.status_code == 200
+    # The name of the followed user who posted a story should be visible
+    assert bytes(user2_followed.full_name.split()[0], 'utf-8') in response.data
+    # The name of the unfollowed user should not be visible
+    assert bytes(user3_unfollowed.full_name.split()[0], 'utf-8') not in response.data
+
+def test_story_viewer_loads(client):
+    """Test that the story viewer page loads correctly."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    story = Story(author=user1, media_path='stories/test.jpg')
+    db.session.add(story)
+    db.session.commit()
+
+    login(client, 'user1', 'pw')
+    response = client.get(f'/story/{story.id}')
+
+    assert response.status_code == 200
+    assert bytes(user1.username, 'utf-8') in response.data
+    assert b'stories/test.jpg' in response.data

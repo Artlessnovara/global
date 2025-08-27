@@ -6,20 +6,28 @@
 <div class="home-container">
     <!-- Stories Bar -->
     <div class="stories-bar">
-        <div class="story add-story">
-            <div class="story-avatar">
-                <img src="https://i.pravatar.cc/150?u={{ g.user.username }}" alt="Your Story">
-                <div class="add-icon">+</div>
+        <!-- Add Story Card -->
+        <a href="{{ url_for('create_story') }}" class="story-card add-story-card">
+            <div class="add-story-img-placeholder">
+                <img src="https://i.pravatar.cc/150?u={{ g.user.username }}" alt="Your profile picture for adding a story">
             </div>
-            <span class="story-username">Add Story</span>
-        </div>
+            <div class="add-story-footer">
+                <div class="add-story-plus-icon">+</div>
+                <span>Create Story</span>
+            </div>
+        </a>
+
+        <!-- Other users' stories -->
         {% for story in stories %}
-        <div class="story">
-            <div class="story-avatar">
-                <img src="https://i.pravatar.cc/150?u={{ story.author.username }}" alt="{{ story.author.username }}'s Story">
+        <a href="{{ url_for('story_viewer', story_id=story.id) }}" class="story-card user-story-card">
+            <div class="user-story-preview">
+                <img src="https://i.pravatar.cc/150?u={{ story.author.username }}_story" alt="{{ story.author.username }}'s Story Preview">
             </div>
-            <span class="story-username">{{ story.author.username }}</span>
-        </div>
+            <div class="user-story-avatar">
+                <img src="https://i.pravatar.cc/150?u={{ story.author.username }}" alt="{{ story.author.username }}'s Avatar">
+            </div>
+            <span class="user-story-name">{{ story.author.full_name.split()[0] }}</span>
+        </a>
         {% endfor %}
     </div>
 

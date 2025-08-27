@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Create Story - GLOOBA{% endblock %}
+
+{% block content %}
+<div class="main-content">
+    <div class="settings-card">
+        <h1>Create a New Story</h1>
+        <p>Upload an image to share with your followers for the next 24 hours.</p>
+
+        <form method="POST" action="{{ url_for('create_story') }}" enctype="multipart/form-data">
+            <div class="form-group" style="margin-top: 20px;">
+                <label for="story-file">Choose an image:</label>
+                <input type_alias="file" name="story_file" id="story-file" required accept="image/*" style="display: block; margin-top: 10px;">
+            </div>
+
+            <button type="submit" class="btn-save-settings" style="margin-top: 20px;">Upload Story</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
