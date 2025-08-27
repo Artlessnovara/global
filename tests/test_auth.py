@@ -35,7 +35,7 @@ def test_signup_page(client):
 
 def test_successful_signup_creation(client):
     """
-    Test that the user creation logic at the end of the signup flow works correctly.
+    Test that the user creation logic at the end of the new 5-step signup flow works correctly.
     This test simulates the state of the session just before the final step.
     """
     with client.session_transaction() as sess:
@@ -43,12 +43,11 @@ def test_successful_signup_creation(client):
             'full_name': 'Test User',
             'email': 'test@example.com',
             'username': 'testuser',
-            'password': 'password',
-            'confirm_password': 'password'
+            'password': 'password'
         }
 
-    # Now, submit the final step
-    response = client.post('/signup/6', data={'date_of_birth': '2000-01-01'}, follow_redirects=True)
+    # Now, submit the final step (which is now step 5)
+    response = client.post('/signup/5', data={'date_of_birth': '2000-01-01'}, follow_redirects=True)
 
     assert b'Account created successfully! Please log in.' in response.data
     assert User.query.filter_by(username='testuser').count() == 1

@@ -59,20 +59,14 @@
                     <input type="password" id="password" name="password" required>
                 </div>
             {% elif step == 5 %}
-                <h3>Step 5: Confirm your password</h3>
-                <div class="form-group">
-                    <label for="confirm_password">Confirm Password</label>
-                    <input type="password" id="confirm_password" name="confirm_password" required>
-                </div>
-            {% elif step == 6 %}
-                <h3>Step 6: What's your date of birth?</h3>
+                <h3>Step 5: What's your date of birth?</h3>
                 <div class="form-group">
                     <label for="date_of_birth">Date of Birth</label>
                     <input type="date" id="date_of_birth" name="date_of_birth" value="{{ form_data.get('date_of_birth', '') }}" required>
                 </div>
             {% endif %}
             <button type="submit" class="btn">
-                {% if step == 6 %}Finish{% else %}Next{% endif %}
+                {% if step == 5 %}Finish{% else %}Next{% endif %}
             </button>
         </form>
     </div>

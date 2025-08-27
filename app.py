@@ -297,12 +297,6 @@ def signup_step(step):
                 flash('Username is already taken.', 'error')
                 return redirect(url_for('signup_step', step=3))
         elif step == 5:
-            if session['signup_form'].get('password') != session['signup_form'].get('confirm_password'):
-                flash('Passwords do not match.', 'error')
-                session['signup_form'].pop('password', None)
-                session['signup_form'].pop('confirm_password', None)
-                return redirect(url_for('signup_step', step=4))
-        elif step == 6:
             try:
                 form_data = session['signup_form']
                 dob = datetime.strptime(form_data.get('date_of_birth'), '%Y-%m-%d').date()
@@ -318,7 +312,7 @@ def signup_step(step):
                 flash(f'An error occurred: {e}', 'error')
                 return redirect(url_for('signup'))
         next_step = step + 1
-        if next_step > 6:
+        if next_step > 5:
             return redirect(url_for('home'))
         return redirect(url_for('signup_step', step=next_step))
     return render_template('signup.html', step=step, form_data=session.get('signup_form', {}))
