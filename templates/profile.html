@@ -32,7 +32,7 @@
                 {% else %}
                     <a href="{{ url_for('follow', user_id=user.id) }}" class="btn-profile-action follow">Follow</a>
                 {% endif %}
-                <a href="#" class="btn-profile-action">Message</a>
+                <a href="{{ url_for('start_chat', user_id=user.id) }}" class="btn-profile-action">Message</a>
             {% else %}
                 <a href="#" class="btn-profile-action">Edit Profile</a>
             {% endif %}

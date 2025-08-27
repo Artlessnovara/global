@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Chat with {{ other_user.full_name if other_user else 'User' }} - GLOOBA{% endblock %}
+
+{% block content %}
+<div class="message-thread-container">
+    <div class="thread-header">
+        {% if other_user %}
+            <a href="{{ url_for('profile', username=other_user.username) }}" class="thread-header-user">
+                <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
+                <span>{{ other_user.full_name }}</span>
+            </a>
+        {% else %}
+             <div class="thread-header-user">
+                <span>Group Chat</span>
+            </div>
+        {% endif %}
+    </div>
+    <div class="message-list">
+        {% for message in messages %}
+            <div class="message-bubble-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}">
+                <div class="message-bubble">
+                    <p>{{ message.body }}</p>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+    <div class="message-composer">
+        <form method="POST">
+            <input type="text" name="body" placeholder="Type a message..." autocomplete="off" required>
+            <button type="submit"><i class="fas fa-paper-plane"></i></button>
+        </form>
+    </div>
+</div>
+{% endblock %}

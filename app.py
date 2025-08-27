@@ -29,6 +29,11 @@ followers = db.Table('followers',
     db.Column('followed_id', db.Integer, db.ForeignKey('users.id'))
 )
 
+conversation_participants = db.Table('conversation_participants',
+    db.Column('user_id', db.Integer, db.ForeignKey('users.id')),
+    db.Column('conversation_id', db.Integer, db.ForeignKey('conversations.id'))
+)
+
 # --- DATABASE MODELS ---
 class User(db.Model):
     __tablename__ = 'users'
@@ -108,6 +113,22 @@ class Reaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=False)
+
+class Conversation(db.Model):
+    __tablename__ = 'conversations'
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade="all, delete-orphan")
+    participants = db.relationship('User', secondary=conversation_participants, backref='conversations')
+
+class Message(db.Model):
+    __tablename__ = 'messages'
+    id = db.Column(db.Integer, primary_key=True)
+    conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    sender = db.relationship('User')
 
 # --- CLI COMMANDS ---
 @click.command('init-db')
@@ -363,6 +384,67 @@ def suggestions():
         ).distinct().limit(20).all()
 
     return render_template('suggestions.html', suggested_users=suggested_users)
+
+@app.route('/chat/<int:conversation_id>', methods=['GET', 'POST'])
+@login_required
+def message_thread(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+
+    # Security check: make sure the current user is part of this conversation
+    if g.user not in convo.participants:
+        return "Not your conversation", 403 # Forbidden
+
+    if request.method == 'POST':
+        body = request.form.get('body')
+        if body:
+            new_message = Message(
+                conversation_id=convo.id,
+                user_id=g.user.id,
+                body=body
+            )
+            db.session.add(new_message)
+            db.session.commit()
+            return redirect(url_for('message_thread', conversation_id=convo.id))
+
+    messages = convo.messages.order_by(Message.created_at.asc()).all()
+    other_user = next((p for p in convo.participants if p.id != g.user.id), None)
+
+    return render_template('message_thread.html', conversation=convo, messages=messages, other_user=other_user)
+
+@app.route('/chat/start/<int:user_id>')
+@login_required
+def start_chat(user_id):
+    other_user = db.get_or_404(User, user_id)
+    if other_user == g.user:
+        flash("You cannot start a chat with yourself.", "error")
+        return redirect(url_for('profile', username=g.user.username))
+
+    # Check if a conversation with this user already exists.
+    # A more efficient way to do this would be a custom query, but this is clear and correct for now.
+    user_convos = g.user.conversations
+    existing_convo = None
+    for convo in user_convos:
+        if len(convo.participants) == 2 and other_user in convo.participants:
+            existing_convo = convo
+            break
+
+    if existing_convo:
+        return redirect(url_for('message_thread', conversation_id=existing_convo.id))
+    else:
+        # Create a new conversation
+        new_convo = Conversation()
+        new_convo.participants.append(g.user)
+        new_convo.participants.append(other_user)
+        db.session.add(new_convo)
+        db.session.commit()
+        return redirect(url_for('message_thread', conversation_id=new_convo.id))
+
+@app.route('/chat')
+@login_required
+def chat_inbox():
+    # The 'conversations' backref was added to the User model
+    user_conversations = g.user.conversations
+    return render_template('chat_inbox.html', conversations=user_conversations, Message=Message)
 
 @app.route('/reels')
 @login_required

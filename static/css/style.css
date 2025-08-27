@@ -853,10 +853,174 @@ body:has(.main-nav) {
     color: #000;
 }
 
+/* Chat Inbox Styles */
+.chat-inbox-container {
+    max-width: 800px;
+    margin: 20px auto;
+    background-color: #fff;
+    border: 1px solid #dbdbdb;
+    border-radius: 8px;
+}
+
+.inbox-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid #dbdbdb;
+}
+
+.inbox-header h2 {
+    margin: 0;
+}
+
+.new-message-btn {
+    font-size: 20px;
+    color: #262626;
+}
+
+.chat-list-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px 20px;
+    text-decoration: none;
+    color: inherit;
+    transition: background-color 0.2s;
+}
+
+.chat-list-item:hover {
+    background-color: #f7f7f7;
+}
+
+.chat-list-item:not(:last-child) {
+    border-bottom: 1px solid #efefef;
+}
+
+.chat-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+}
+
+.chat-item-details {
+    flex-grow: 1;
+}
+
+.chat-item-name {
+    font-weight: bold;
+    display: block;
+}
+
+.chat-item-preview {
+    color: #8e8e8e;
+    font-size: 14px;
+}
+
+.no-chats {
+    text-align: center;
+    padding: 50px;
+    color: #8e8e8e;
+}
+
 /* Settings Page */
 .settings-container {
     max-width: 700px;
     margin: 20px auto;
+}
+
+/* Message Thread Styles */
+.message-thread-container {
+    max-width: 800px;
+    margin: 20px auto;
+    background-color: #fff;
+    border: 1px solid #dbdbdb;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 150px);
+}
+
+.thread-header {
+    padding: 10px 20px;
+    border-bottom: 1px solid #dbdbdb;
+}
+
+.thread-header-user {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    text-decoration: none;
+    color: #262626;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.message-list {
+    flex-grow: 1;
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.message-bubble-container {
+    display: flex;
+    width: 100%;
+}
+.message-bubble-container.sent {
+    justify-content: flex-end;
+}
+.message-bubble-container.received {
+    justify-content: flex-start;
+}
+
+.message-bubble {
+    max-width: 60%;
+    padding: 10px 15px;
+    border-radius: 18px;
+}
+.message-bubble p {
+    margin: 0;
+}
+
+.message-bubble-container.sent .message-bubble {
+    background-color: #0095f6;
+    color: white;
+    border-bottom-right-radius: 4px;
+}
+
+.message-bubble-container.received .message-bubble {
+    background-color: #efefef;
+    color: #262626;
+    border-bottom-left-radius: 4px;
+}
+
+.message-composer {
+    padding: 10px;
+    border-top: 1px solid #dbdbdb;
+}
+
+.message-composer form {
+    display: flex;
+    gap: 10px;
+}
+
+.message-composer input {
+    flex-grow: 1;
+    border: 1px solid #dbdbdb;
+    border-radius: 18px;
+    padding: 10px 15px;
+    outline: none;
+}
+
+.message-composer button {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #0095f6;
+    cursor: pointer;
 }
 
 .settings-card {

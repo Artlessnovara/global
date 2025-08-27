@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Inbox - GLOOBA{% endblock %}
+
+{% block content %}
+<div class="chat-inbox-container">
+    <div class="inbox-header">
+        <h2>Inbox</h2>
+        <a href="#" class="new-message-btn"><i class="fas fa-edit"></i></a>
+    </div>
+    <div class="chat-list">
+        {% if conversations %}
+            {% for convo in conversations %}
+                <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-list-item">
+                    <!-- For a 1-on-1 chat, find the other participant -->
+                    {% set other_user = convo.participants|rejectattr('id', 'equalto', g.user.id)|first %}
+                    <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
+                    <div class="chat-item-details">
+                        <span class="chat-item-name">{{ other_user.full_name }}</span>
+                        <span class="chat-item-preview">
+                            {% if convo.messages.order_by(Message.created_at.desc()).first() %}
+                                {{ convo.messages.order_by(Message.created_at.desc()).first().body[:30] }}...
+                            {% else %}
+                                No messages yet.
+                            {% endif %}
+                        </span>
+                    </div>
+                </a>
+            {% endfor %}
+        {% else %}
+            <div class="no-chats">
+                <p>You have no conversations yet.</p>
+                <p>Start a new chat from a user's profile.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
