@@ -66,6 +66,19 @@
                 closeComposer();
             }
         }
+
+        function checkPremiumFeatures(selectedMode) {
+            const premiumSection = document.getElementById('premium-feature-section');
+            if (!premiumSection) return; // a user might not have the section if they are not premium, so we check
+
+            const isPremiumUser = {{ g.user.is_premium|tojson }};
+
+            if (isPremiumUser && selectedMode === 'Music') {
+                premiumSection.style.display = 'block';
+            } else {
+                premiumSection.style.display = 'none';
+            }
+        }
     </script>
 </body>
 </html>

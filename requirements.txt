@@ -3,3 +3,4 @@ Flask-SQLAlchemy
 Werkzeug
 pytest
 pytest-flask
+humanize

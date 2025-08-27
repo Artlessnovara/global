@@ -42,24 +42,34 @@
                         <div>
                             <a href="#" class="author-name">{{ post.author.full_name }}</a>
                             <div class="post-meta">
-                                <span>{{ post.created_at.strftime('%b %d, %Y') }}</span> &middot; <span class="mode-tag">@{{ post.mode }}</span>
+                                <span>{{ post.created_at|humanize_time }}</span> &middot; <span class="mode-tag">@{{ post.mode }}</span>
                             </div>
                         </div>
                     </div>
-                    <div class="follow-button-placeholder">Follow</div>
+                    <div class="post-header-right">
+                        {% if post.author != g.user %}
+                            {% if g.user.is_following(post.author) %}
+                                <a href="{{ url_for('unfollow', user_id=post.author.id) }}" class="follow-btn following">Following</a>
+                            {% else %}
+                                <a href="{{ url_for('follow', user_id=post.author.id) }}" class="follow-btn">Follow</a>
+                            {% endif %}
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="post-content">
                     <p>{{ post.text }}</p>
                 </div>
                 <div class="post-footer">
                     <div class="post-actions">
-                        <button class="action-btn"><i class="far fa-heart"></i> React</button>
+                        <a href="{{ url_for('react', post_id=post.id) }}" class="action-btn {% if g.user.has_reacted_to(post) %}reacted{% endif %}">
+                            <i class="fa-heart {% if g.user.has_reacted_to(post) %}fas{% else %}far{% endif %}"></i> React
+                        </a>
                         <button class="action-btn"><i class="far fa-comment"></i> Comment</button>
                         <button class="action-btn"><i class="far fa-share-square"></i> Share</button>
                         <button class="action-btn"><i class="fas fa-retweet"></i> Repost</button>
                     </div>
                     <div class="post-stats">
-                        <span>0 Reactions</span>
+                        <span>{{ post.reactions.count() }} Reactions</span>
                         <span>0 Comments</span>
                         <span>0 Shares</span>
                         <span>0 Reposts</span>
@@ -88,7 +98,7 @@
                 <textarea name="text_content" placeholder="What's on your mind?"></textarea>
                 <div class="form-group">
                     <label for="mode-select">Choose a mode:</label>
-                    <select name="mode" id="mode-select" required>
+                    <select name="mode" id="mode-select" required onchange="checkPremiumFeatures(this.value)">
                         <option value="">Select Mode</option>
                         <option value="Education">Education</option>
                         <option value="Music">Music</option>
@@ -97,6 +107,12 @@
                         <option value="Travel">Travel</option>
                         <option value="Food">Food</option>
                     </select>
+                </div>
+
+                <!-- Premium Feature Placeholder -->
+                <div id="premium-feature-section" style="display: none;" class="premium-feature">
+                    <label for="instrumental">Add Instrumental (Premium)</label>
+                    <input type="text" id="instrumental" name="instrumental" placeholder="e.g., 'Acoustic Guitar backing track'">
                 </div>
                 <div class="post-options">
                     <span>Add to your post:</span>

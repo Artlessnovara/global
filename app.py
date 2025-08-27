@@ -6,13 +6,28 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import click
 from flask.cli import with_appcontext
 from functools import wraps
+import humanize
 
 app = Flask(__name__)
+
+@app.template_filter('humanize_time')
+def _jinja2_filter_humanize_time(dt):
+    # dt is the stored UTC time
+    # We compare it with the current UTC time
+    now_utc = datetime.utcnow()
+    if dt > now_utc:
+        return "in the future" # should not happen
+    return humanize.naturaltime(now_utc - dt)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///glooba.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+
+followers = db.Table('followers',
+    db.Column('follower_id', db.Integer, db.ForeignKey('users.id')),
+    db.Column('followed_id', db.Integer, db.ForeignKey('users.id'))
+)
 
 # --- DATABASE MODELS ---
 class User(db.Model):
@@ -25,15 +40,40 @@ class User(db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     date_of_birth = db.Column(db.Date, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_premium = db.Column(db.Boolean, default=False, nullable=False)
 
-    posts = db.relationship('Post', backref='author', lazy=True)
+    posts = db.relationship('Post', backref='author', lazy='dynamic')
     stories = db.relationship('Story', backref='author', lazy=True)
+    reactions = db.relationship('Reaction', backref='user', lazy='dynamic')
+
+    followed = db.relationship(
+        'User', secondary=followers,
+        primaryjoin=(followers.c.follower_id == id),
+        secondaryjoin=(followers.c.followed_id == id),
+        backref=db.backref('followers', lazy='dynamic'), lazy='dynamic')
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    def follow(self, user):
+        if not self.is_following(user):
+            self.followed.append(user)
+
+    def unfollow(self, user):
+        if self.is_following(user):
+            self.followed.remove(user)
+
+    def is_following(self, user):
+        return self.followed.filter(
+            followers.c.followed_id == user.id).count() > 0
+
+    def has_reacted_to(self, post):
+        return Reaction.query.filter(
+            Reaction.user_id == self.id,
+            Reaction.post_id == post.id).count() > 0
 
 class Post(db.Model):
     __tablename__ = 'posts'
@@ -45,6 +85,8 @@ class Post(db.Model):
     mode = db.Column(db.String(50), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    reactions = db.relationship('Reaction', backref='post', lazy='dynamic')
+
 class Story(db.Model):
     __tablename__ = 'stories'
     id = db.Column(db.Integer, primary_key=True)
@@ -52,6 +94,12 @@ class Story(db.Model):
     media_path = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     expires_at = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(hours=24), nullable=False)
+
+class Reaction(db.Model):
+    __tablename__ = 'reactions'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=False)
 
 # --- CLI COMMANDS ---
 @click.command('init-db')
@@ -112,6 +160,49 @@ def logout():
     session.clear()
     flash('You have been logged out.', 'success')
     return redirect(url_for('login'))
+
+
+@app.route('/follow/<int:user_id>')
+@login_required
+def follow(user_id):
+    user_to_follow = db.get_or_404(User, user_id)
+    if user_to_follow == g.user:
+        flash('You cannot follow yourself.', 'error')
+        return redirect(url_for('home'))
+
+    g.user.follow(user_to_follow)
+    db.session.commit()
+    flash(f'You are now following {user_to_follow.username}.', 'success')
+    return redirect(request.referrer or url_for('home'))
+
+@app.route('/unfollow/<int:user_id>')
+@login_required
+def unfollow(user_id):
+    user_to_unfollow = db.get_or_404(User, user_id)
+    if user_to_unfollow == g.user:
+        flash('You cannot unfollow yourself.', 'error')
+        return redirect(url_for('home'))
+
+    g.user.unfollow(user_to_unfollow)
+    db.session.commit()
+    flash(f'You have unfollowed {user_to_unfollow.username}.', 'success')
+    return redirect(request.referrer or url_for('home'))
+
+@app.route('/react/<int:post_id>')
+@login_required
+def react(post_id):
+    post = db.get_or_404(Post, post_id)
+    existing_reaction = Reaction.query.filter_by(user_id=g.user.id, post_id=post.id).first()
+
+    if existing_reaction:
+        db.session.delete(existing_reaction)
+        db.session.commit()
+    else:
+        new_reaction = Reaction(user_id=g.user.id, post_id=post.id)
+        db.session.add(new_reaction)
+        db.session.commit()
+
+    return redirect(request.referrer or url_for('home'))
 
 @app.route('/signup', methods=['GET'])
 def signup():
@@ -205,17 +296,13 @@ def create_post():
 @app.route('/home')
 @login_required
 def home():
-    # Dummy data for stories
-    users_for_stories = User.query.filter(User.id != g.user.id).limit(10).all()
-    dummy_stories = []
-    if users_for_stories:
-        for u in users_for_stories:
-            dummy_stories.append(Story(author=u))
+    # Get stories only from users the current user follows
+    stories = Story.query.join(followers, (followers.c.followed_id == Story.user_id)).filter(followers.c.follower_id == g.user.id).order_by(Story.created_at.desc()).all()
 
     # Fetch all posts for the global feed, newest first
     posts = Post.query.order_by(Post.created_at.desc()).all()
 
-    return render_template('home.html', stories=dummy_stories, posts=posts)
+    return render_template('home.html', stories=stories, posts=posts)
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -128,8 +128,8 @@ body {
 }
 
 .story-avatar {
-    width: 66px;
-    height: 66px;
+    width: 72px; /* Increased size */
+    height: 72px; /* Increased size */
     border-radius: 50%;
     padding: 3px;
     background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
@@ -140,22 +140,23 @@ body {
 }
 
 .story.add-story .story-avatar {
+    border-radius: 12px; /* Makes it a square with rounded corners */
     background: none;
     border: 1px dashed #ccc;
 }
 
 .story-avatar img {
-    width: 60px;
-    height: 60px;
+    width: 66px; /* Increased size */
+    height: 66px; /* Increased size */
     border-radius: 50%;
     border: 2px solid #fff;
 }
 
 .story-username {
-    font-size: 12px;
-    margin-top: 5px;
+    font-size: 13px; /* Slightly larger */
+    margin-top: 6px;
     display: block;
-    max-width: 70px;
+    max-width: 80px; /* Increased max-width */
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -299,6 +300,28 @@ body {
     border: 1px solid #ccc;
 }
 
+.premium-feature {
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #f0f8ff;
+    border: 1px solid #b0e0e6;
+    border-radius: 5px;
+}
+
+.premium-feature label {
+    font-weight: bold;
+    color: #4682b4;
+}
+
+.premium-feature input {
+    width: 100%;
+    padding: 8px;
+    box-sizing: border-box;
+    border: 1px solid #b0e0e6;
+    border-radius: 3px;
+    margin-top: 5px;
+}
+
 .post-options {
     border: 1px solid #ccc;
     border-radius: 5px;
@@ -391,11 +414,34 @@ body {
     color: #00376b;
 }
 
-.follow-button-placeholder {
+.post-header-right {
+    margin-left: auto; /* Pushes the button to the right */
+    padding-left: 15px;
+}
+
+.follow-btn {
     font-size: 14px;
     font-weight: bold;
-    color: #0095f6;
-    cursor: pointer;
+    color: #fff;
+    background-color: #0095f6;
+    padding: 6px 12px;
+    border-radius: 5px;
+    text-decoration: none;
+    transition: background-color 0.2s;
+}
+
+.follow-btn:hover {
+    background-color: #0077c2;
+}
+
+.follow-btn.following {
+    color: #262626;
+    background-color: #efefef;
+    border: 1px solid #dbdbdb;
+}
+
+.follow-btn.following:hover {
+    background-color: #dbdbdb;
 }
 
 .post-content {
@@ -435,6 +481,11 @@ body {
 }
 .action-btn:hover {
     background-color: #f0f2f5;
+}
+
+.action-btn.reacted {
+    color: #ed4956; /* Red color for reacted state */
+    font-weight: bold;
 }
 
 .post-stats {
