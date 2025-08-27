@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}More - GLOOBA{% endblock %}
+
+{% block content %}
+<div class="more-menu-container">
+    <h2>More Options</h2>
+    <div class="more-menu-list">
+        <a href="{{ url_for('settings') }}" class="more-menu-item">
+            <i class="fas fa-cog"></i>
+            <span>Settings</span>
+        </a>
+        <a href="{{ url_for('logout') }}" class="more-menu-item">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Logout</span>
+        </a>
+        <!-- Other links can be added here in the future -->
+    </div>
+</div>
+{% endblock %}

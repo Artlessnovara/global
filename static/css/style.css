@@ -1057,6 +1057,39 @@ body:has(.main-nav) {
     background-color: #0077c2;
 }
 
+/* Unread Notification Styles */
+.top-bar-right .icon-button {
+    position: relative;
+}
+
+.unread-badge {
+    position: absolute;
+    top: -5px;
+    right: -10px;
+    background-color: #ed4956;
+    color: white;
+    border-radius: 50%;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: bold;
+    border: 1px solid #fff;
+}
+
+.chat-list-item {
+    position: relative;
+}
+
+.unread-dot {
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 10px;
+    background-color: #0095f6;
+    border-radius: 50%;
+}
+
 /* Suggestions Page */
 .suggestions-container {
     max-width: 600px;
@@ -1108,4 +1141,38 @@ body:has(.main-nav) {
 
 .suggestion-action .follow-btn {
     padding: 6px 20px;
+}
+
+/* More Menu Page */
+.more-menu-container {
+    max-width: 600px;
+    margin: 20px auto;
+}
+
+.more-menu-list {
+    background-color: #fff;
+    border: 1px solid #dbdbdb;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.more-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px;
+    text-decoration: none;
+    color: #262626;
+    font-weight: bold;
+    border-radius: 8px;
+}
+
+.more-menu-item:hover {
+    background-color: #f7f7f7;
+}
+
+.more-menu-item i {
+    width: 20px;
+    text-align: center;
+    font-size: 18px;
 }

@@ -104,3 +104,13 @@ def test_suggestions_page(client):
     assert b'@musicuser' in response.data
     # Check that the sports user is NOT suggested
     assert b'@sportsuser' not in response.data
+
+def test_more_page(client):
+    """Test that the 'More' page loads and contains a link to settings."""
+    register_user(username='testuser', password='password')
+    login(client, 'testuser', 'password')
+
+    response = client.get('/more')
+    assert response.status_code == 200
+    assert b'More Options' in response.data
+    assert b'href="/settings"' in response.data

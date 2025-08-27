@@ -9,22 +9,30 @@
         <a href="#" class="new-message-btn"><i class="fas fa-edit"></i></a>
     </div>
     <div class="chat-list">
-        {% if conversations %}
-            {% for convo in conversations %}
+        {% if participant_entries %}
+            {% for p_entry in participant_entries %}
+                {% set convo = p_entry.conversation %}
                 <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-list-item">
                     <!-- For a 1-on-1 chat, find the other participant -->
-                    {% set other_user = convo.participants|rejectattr('id', 'equalto', g.user.id)|first %}
-                    <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
-                    <div class="chat-item-details">
-                        <span class="chat-item-name">{{ other_user.full_name }}</span>
-                        <span class="chat-item-preview">
-                            {% if convo.messages.order_by(Message.created_at.desc()).first() %}
-                                {{ convo.messages.order_by(Message.created_at.desc()).first().body[:30] }}...
-                            {% else %}
-                                No messages yet.
-                            {% endif %}
-                        </span>
-                    </div>
+                    {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
+                    {% if other_participant %}
+                        {% set other_user = other_participant.user %}
+                        <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
+                        <div class="chat-item-details">
+                            <span class="chat-item-name">{{ other_user.full_name }}</span>
+                            <span class="chat-item-preview">
+                                {% if convo.messages.order_by(Message.created_at.desc()).first() %}
+                                    {{ convo.messages.order_by(Message.created_at.desc()).first().body[:30] }}...
+                                {% else %}
+                                    No messages yet.
+                                {% endif %}
+                            </span>
+                        </div>
+                        {% set unread_count = convo.unread_messages_for(g.user) %}
+                        {% if unread_count > 0 %}
+                            <span class="unread-dot"></span>
+                        {% endif %}
+                    {% endif %}
                 </a>
             {% endfor %}
         {% else %}
