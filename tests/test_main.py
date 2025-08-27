@@ -189,3 +189,23 @@ def test_story_viewer_loads(client):
     assert response.status_code == 200
     assert bytes(user1.username, 'utf-8') in response.data
     assert b'stories/test.jpg' in response.data
+
+def test_post_does_not_appear_on_profile(client):
+    """Test that a post created on the home feed does not appear on the user's profile."""
+    user = register_user(username='testprofile', password='password')
+    login(client, 'testprofile', 'password')
+
+    # Create a post
+    client.post('/create_post', data={
+        'text_content': 'This post should not be on my profile.',
+        'mode': 'Testing'
+    }, follow_redirects=True)
+
+    # Visit the user's profile page
+    response = client.get(f'/profile/{user.username}')
+
+    assert response.status_code == 200
+    # The post content should NOT be on the profile page
+    assert b'This post should not be on my profile.' not in response.data
+    # The profile should show the "No posts yet" message
+    assert b'No posts yet.' in response.data

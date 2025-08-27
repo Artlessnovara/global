@@ -346,7 +346,8 @@ def create_post():
 def profile(username):
     user = User.query.filter_by(username=username).first_or_404()
     stats = {'posts': user.posts.count(), 'followers': user.followers.count(), 'following': user.followed.count()}
-    posts = user.posts.order_by(Post.created_at.desc()).all()
+    # Per new requirement, posts from the global feed do not appear on profiles.
+    posts = []
     return render_template('profile.html', user=user, stats=stats, posts=posts)
 
 @app.route('/home')
