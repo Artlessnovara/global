@@ -31,7 +31,7 @@
     <nav class="main-nav">
         <a href="{{ url_for('home') }}" class="nav-icon {% if request.endpoint == 'home' %}active{% endif %}"><i class="fas fa-home"></i></a>
         <a href="#" class="nav-icon"><i class="fas fa-user-friends"></i></a>
-        <a href="#" class="nav-icon"><i class="fas fa-video"></i></a>
+        <a href="{{ url_for('reels') }}" class="nav-icon {% if request.endpoint == 'reels' %}active{% endif %}"><i class="fas fa-video"></i></a>
         <a href="{{ url_for('profile', username=g.user.username) }}" class="nav-icon {% if request.endpoint == 'profile' %}active{% endif %}"><i class="fas fa-user-circle"></i></a>
         <a href="#" class="nav-icon"><i class="fas fa-bell"></i></a>
         <a href="#" class="nav-icon"><i class="fas fa-bars"></i></a>

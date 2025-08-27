@@ -47,6 +47,7 @@ class User(db.Model):
     bio = db.Column(db.Text, nullable=True)
     location = db.Column(db.String(100), nullable=True)
     work_education = db.Column(db.String(150), nullable=True)
+    country = db.Column(db.String(100), nullable=True)
 
     posts = db.relationship('Post', backref='author', lazy='dynamic')
     stories = db.relationship('Story', backref='author', lazy=True)
@@ -289,7 +290,7 @@ def create_post():
 
     new_post = Post(
         user_id=g.user.id,
-        content_type='text', # Hardcoded for now
+        content_type='text', # Reverted back from 'video'
         text=text_content,
         mode=mode
     )
@@ -324,6 +325,13 @@ def home():
     posts = Post.query.order_by(Post.created_at.desc()).all()
 
     return render_template('home.html', stories=stories, posts=posts)
+
+@app.route('/reels')
+@login_required
+def reels():
+    # Fetch all posts that are videos, for now.
+    video_posts = Post.query.filter_by(content_type='video').order_by(Post.created_at.desc()).all()
+    return render_template('reels.html', posts=video_posts)
 
 if __name__ == '__main__':
     app.run(debug=True)

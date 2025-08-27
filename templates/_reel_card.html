@@ -1,0 +1,31 @@
+<div class="reel-card">
+    <div class="reel-video-placeholder">
+        <!-- In a real app, a <video> tag would go here -->
+        <img src="https://i.pravatar.cc/400/700?u=reel-{{ post.id }}" alt="Reel video placeholder">
+    </div>
+    <div class="reel-info">
+        <div class="reel-author-info">
+            <a href="{{ url_for('profile', username=post.author.username) }}">
+                <img src="https://i.pravatar.cc/150?u={{ post.author.username }}" alt="{{ post.author.username }}'s avatar" class="author-avatar">
+                <span class="author-username">@{{ post.author.username }}</span>
+            </a>
+        </div>
+        <div class="reel-caption">
+            <p>{{ post.text }}</p>
+        </div>
+    </div>
+    <div class="reel-actions">
+        <!-- This is where the like, comment, share buttons would go -->
+        <button class="reel-action-btn"><i class="fas fa-heart"></i><span>{{ post.reactions.count() }}</span></button>
+        <button class="reel-action-btn"><i class="fas fa-comment"></i><span>0</span></button>
+        <button class="reel-action-btn"><i class="fas fa-share"></i><span>0</span></button>
+        <!-- Functional Follow/Unfollow Button -->
+        {% if post.author != g.user %}
+            {% if g.user.is_following(post.author) %}
+                <a href="{{ url_for('unfollow', user_id=post.author.id) }}" class="reel-follow-btn following">✓ Following</a>
+            {% else %}
+                <a href="{{ url_for('follow', user_id=post.author.id) }}" class="reel-follow-btn">Follow</a>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>

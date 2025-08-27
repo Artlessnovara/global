@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Reels - GLOOBA{% endblock %}
+
+{% block content %}
+<div class="reels-page-container">
+    <div class="reels-header">
+        <button class="toggle-btn active">For You</button>
+        <button class="toggle-btn">Nearby</button>
+    </div>
+    <div class="reels-container">
+        {% if posts %}
+            {% for post in posts %}
+                {% include '_reel_card.html' %}
+            {% endfor %}
+        {% else %}
+            <div class="post-placeholder" style="color: #333; background-color: transparent;">
+                <h2>No Reels to show.</h2>
+                <p>Create a video post to see it here!</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
