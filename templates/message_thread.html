@@ -33,3 +33,64 @@
     </div>
 </div>
 {% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+<script type="text/javascript">
+    document.addEventListener('DOMContentLoaded', function() {
+        var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+        var conversationId = "{{ conversation.id }}";
+
+        // Join the conversation room
+        socket.on('connect', function() {
+            socket.emit('join', {room: conversationId});
+        });
+
+        // Listen for new messages
+        socket.on('new_message', function(msg) {
+            const messageList = document.querySelector('.message-list');
+            const currentUserId = {{ g.user.id }};
+
+            // Don't append the message if we sent it (it's already handled by the form submission logic)
+            // No, the form submission logic now just emits, it doesn't add to the DOM.
+            // So we need to render the message for everyone, including the sender.
+
+            // Create new message bubble
+            const bubbleContainer = document.createElement('div');
+            bubbleContainer.classList.add('message-bubble-container');
+            if (msg.user_id === currentUserId) {
+                bubbleContainer.classList.add('sent');
+            } else {
+                bubbleContainer.classList.add('received');
+            }
+
+            const bubble = document.createElement('div');
+            bubble.classList.add('message-bubble');
+            const p = document.createElement('p');
+            p.textContent = msg.body;
+            bubble.appendChild(p);
+            bubbleContainer.appendChild(bubble);
+
+            messageList.appendChild(bubbleContainer);
+            // Scroll to the bottom
+            messageList.scrollTop = messageList.scrollHeight;
+        });
+
+        // Handle form submission
+        const form = document.querySelector('.message-composer form');
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            let messageInput = document.querySelector('input[name="body"]');
+            let message = messageInput.value;
+            if (message.trim() !== '') {
+                socket.emit('send_message', {room: conversationId, message: message});
+                messageInput.value = ''; // Clear input field
+            }
+        });
+
+        // Scroll to the bottom of the message list on page load
+        const messageList = document.querySelector('.message-list');
+        messageList.scrollTop = messageList.scrollHeight;
+    });
+</script>
+{% endblock %}

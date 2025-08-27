@@ -7,6 +7,7 @@ import click
 from flask.cli import with_appcontext
 from functools import wraps
 import humanize
+from flask_socketio import SocketIO, emit, join_room, leave_room
 
 app = Flask(__name__)
 
@@ -23,6 +24,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///glooba.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+socketio = SocketIO(app)
 
 followers = db.Table('followers',
     db.Column('follower_id', db.Integer, db.ForeignKey('users.id')),
@@ -385,7 +387,7 @@ def suggestions():
 
     return render_template('suggestions.html', suggested_users=suggested_users)
 
-@app.route('/chat/<int:conversation_id>', methods=['GET', 'POST'])
+@app.route('/chat/<int:conversation_id>')
 @login_required
 def message_thread(conversation_id):
     convo = db.get_or_404(Conversation, conversation_id)
@@ -393,18 +395,6 @@ def message_thread(conversation_id):
     # Security check: make sure the current user is part of this conversation
     if g.user not in convo.participants:
         return "Not your conversation", 403 # Forbidden
-
-    if request.method == 'POST':
-        body = request.form.get('body')
-        if body:
-            new_message = Message(
-                conversation_id=convo.id,
-                user_id=g.user.id,
-                body=body
-            )
-            db.session.add(new_message)
-            db.session.commit()
-            return redirect(url_for('message_thread', conversation_id=convo.id))
 
     messages = convo.messages.order_by(Message.created_at.asc()).all()
     other_user = next((p for p in convo.participants if p.id != g.user.id), None)
@@ -453,5 +443,48 @@ def reels():
     video_posts = Post.query.filter_by(content_type='video').order_by(Post.created_at.desc()).all()
     return render_template('reels.html', posts=video_posts)
 
+# --- SOCKETIO EVENTS ---
+@socketio.on('send_message')
+def handle_send_message_event(data):
+    """Save a new message and broadcast it to the conversation room."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return
+
+    user = db.session.get(User, user_id)
+    convo = db.get_or_404(Conversation, data['room'])
+    # Ensure the user is part of the conversation before saving the message
+    if user not in convo.participants:
+        return # Or emit an error
+
+    new_message = Message(
+        conversation_id=data['room'],
+        user_id=user_id,
+        body=data['message']
+    )
+    db.session.add(new_message)
+    db.session.commit()
+
+    message_data = {
+        'body': new_message.body,
+        'author_name': new_message.sender.full_name,
+        'author_username': new_message.sender.username,
+        'user_id': new_message.user_id
+    }
+
+    emit('new_message', message_data, room=data['room'])
+
+@socketio.on('join')
+def on_join(data):
+    """A user joins a conversation room."""
+    room = data['room']
+    join_room(room)
+
+@socketio.on('leave')
+def on_leave(data):
+    """A user leaves a conversation room."""
+    room = data['room']
+    leave_room(room)
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    socketio.run(app, debug=True)

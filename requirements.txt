@@ -4,3 +4,4 @@ Werkzeug
 pytest
 pytest-flask
 humanize
+Flask-SocketIO
