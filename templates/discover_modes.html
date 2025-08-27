@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Discover Modes - GLOOBA{% endblock %}
+{% block content %}
+<div class="modes-page-container">
+    <h2>Discover Modes</h2>
+    <p>Explore all the available modes on GLOOBA.</p>
+    <div class="modes-list">
+        {% for mode in modes %}
+            <div class="mode-card">
+                {{ mode.name }}
+                <!-- In the future, a button to 'Add' or 'Subscribe' could go here -->
+            </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

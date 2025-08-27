@@ -29,6 +29,11 @@ followers = db.Table('followers',
     db.Column('followed_id', db.Integer, db.ForeignKey('users.id'))
 )
 
+user_modes = db.Table('user_modes',
+    db.Column('user_id', db.Integer, db.ForeignKey('users.id')),
+    db.Column('mode_id', db.Integer, db.ForeignKey('modes.id'), primary_key=True)
+)
+
 # --- DATABASE MODELS ---
 class User(db.Model):
     __tablename__ = 'users'
@@ -46,12 +51,12 @@ class User(db.Model):
     location = db.Column(db.String(100), nullable=True)
     work_education = db.Column(db.String(150), nullable=True)
     country = db.Column(db.String(100), nullable=True)
-    preferred_modes = db.Column(db.Text, nullable=True)
 
     posts = db.relationship('Post', backref='author', lazy='dynamic')
     stories = db.relationship('Story', backref='author', lazy=True)
     reactions = db.relationship('Reaction', backref='user', lazy='dynamic')
     conversations = db.relationship('Participant', cascade="all, delete-orphan")
+    preferred_modes = db.relationship('Mode', secondary=user_modes, lazy='subquery', backref=db.backref('users', lazy=True))
 
     followed = db.relationship(
         'User', secondary=followers,
@@ -107,6 +112,11 @@ class Reaction(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=False)
 
+class Mode(db.Model):
+    __tablename__ = 'modes'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+
 class Participant(db.Model):
     __tablename__ = 'participants'
     id = db.Column(db.Integer, primary_key=True)
@@ -142,9 +152,22 @@ class Message(db.Model):
 @click.command('init-db')
 @with_appcontext
 def init_db_command():
+    """Clear the existing data and create new tables."""
     db.drop_all()
     db.create_all()
-    click.echo('Initialized the database.')
+
+    modes_to_add = [
+        'Education', 'Music', 'Artist', 'Innovation', 'Sports', 'Welfare',
+        'Fun', 'Job', 'Blog/Article', 'Podcast/Audio', 'Gaming',
+        'Community/Forum', 'Business/Marketplace', 'Event', 'News/Update',
+        'Wellness', 'Creativity', 'Civic/Leadership', 'Networking'
+    ]
+    for mode_name in modes_to_add:
+        new_mode = Mode(name=mode_name)
+        db.session.add(new_mode)
+
+    db.session.commit()
+    click.echo('Initialized the database and seeded modes.')
 app.cli.add_command(init_db_command)
 
 # --- AUTH HELPERS & DECORATORS ---
@@ -321,24 +344,38 @@ def home():
     posts = Post.query.order_by(Post.created_at.desc()).all()
     return render_template('home.html', stories=stories, posts=posts)
 
-AVAILABLE_MODES = ['Education', 'Music', 'Sports', 'Gaming', 'Travel', 'Food']
-
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
     if request.method == 'POST':
-        selected_modes = request.form.getlist('modes')
-        g.user.preferred_modes = ','.join(selected_modes)
+        selected_mode_ids = request.form.getlist('modes')
+        g.user.preferred_modes = []
+        for mode_id in selected_mode_ids:
+            mode = db.session.get(Mode, int(mode_id))
+            if mode:
+                g.user.preferred_modes.append(mode)
         db.session.commit()
         flash('Your preferences have been updated.', 'success')
         return redirect(url_for('settings'))
-    user_modes = g.user.preferred_modes.split(',') if g.user.preferred_modes else []
-    return render_template('settings.html', available_modes=AVAILABLE_MODES, user_modes=user_modes)
+    all_modes = Mode.query.order_by(Mode.name).all()
+    user_mode_ids = [mode.id for mode in g.user.preferred_modes]
+    return render_template('settings.html', available_modes=all_modes, user_mode_ids=user_mode_ids)
 
 @app.route('/more')
 @login_required
 def more():
     return render_template('more.html')
+
+@app.route('/modes/my')
+@login_required
+def my_modes():
+    return render_template('my_modes.html')
+
+@app.route('/modes/discover')
+@login_required
+def discover_modes():
+    all_modes = Mode.query.order_by(Mode.name).all()
+    return render_template('discover_modes.html', modes=all_modes)
 
 @app.route('/suggestions')
 @login_required
@@ -346,7 +383,7 @@ def suggestions():
     preferred_modes = g.user.preferred_modes
     suggested_users = []
     if preferred_modes:
-        modes_list = preferred_modes.split(',')
+        modes_list = [mode.name for mode in preferred_modes]
         followed_user_ids = [user.id for user in g.user.followed]
         suggested_users = db.session.query(User).join(Post).filter(Post.mode.in_(modes_list), User.id != g.user.id, ~User.id.in_(followed_user_ids)).distinct().limit(20).all()
     return render_template('suggestions.html', suggested_users=suggested_users)

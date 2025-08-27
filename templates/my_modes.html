@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}My Modes - GLOOBA{% endblock %}
+{% block content %}
+<div class="modes-page-container">
+    <h2>My Modes</h2>
+    <p>These are the modes you've selected. You can change them in <a href="{{ url_for('settings') }}">Settings</a>.</p>
+    <div class="modes-list">
+        {% for mode in g.user.preferred_modes %}
+            <div class="mode-card">{{ mode.name }}</div>
+        {% else %}
+            <p>You haven't selected any preferred modes yet.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -12,8 +12,8 @@
             <div class="form-group mode-checkboxes">
                 {% for mode in available_modes %}
                     <label class="checkbox-label">
-                        <input type="checkbox" name="modes" value="{{ mode }}" {% if mode in user_modes %}checked{% endif %}>
-                        {{ mode }}
+                        <input type="checkbox" name="modes" value="{{ mode.id }}" {% if mode.id in user_mode_ids %}checked{% endif %}>
+                        {{ mode.name }}
                     </label>
                 {% endfor %}
             </div>

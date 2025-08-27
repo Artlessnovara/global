@@ -1145,34 +1145,72 @@ body:has(.main-nav) {
 
 /* More Menu Page */
 .more-menu-container {
-    max-width: 600px;
+    max-width: 900px;
     margin: 20px auto;
 }
 
-.more-menu-list {
+.more-menu-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+.menu-section {
     background-color: #fff;
     border: 1px solid #dbdbdb;
     border-radius: 8px;
-    padding: 10px;
+    padding: 20px;
+}
+
+.menu-section h3 {
+    font-size: 18px;
+    margin: 0 0 15px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .more-menu-item {
     display: flex;
     align-items: center;
     gap: 15px;
-    padding: 15px;
+    padding: 12px;
     text-decoration: none;
     color: #262626;
-    font-weight: bold;
+    font-weight: 500;
     border-radius: 8px;
+    transition: background-color 0.2s;
 }
 
 .more-menu-item:hover {
-    background-color: #f7f7f7;
+    background-color: #f0f2f5;
 }
 
 .more-menu-item i {
     width: 20px;
     text-align: center;
-    font-size: 18px;
+    font-size: 16px;
+    color: #555;
+}
+
+/* Modes Pages */
+.modes-page-container {
+    max-width: 800px;
+    margin: 20px auto;
+}
+.modes-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-top: 20px;
+}
+.mode-card {
+    background-color: #fff;
+    border: 1px solid #dbdbdb;
+    border-radius: 8px;
+    padding: 20px;
+    font-weight: bold;
+    text-align: center;
+    flex-grow: 1;
+    min-width: 150px;
 }
