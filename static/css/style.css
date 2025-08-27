@@ -3,7 +3,11 @@ body {
     background-color: #f0f2f5;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     margin: 0;
-    padding-top: 110px; /* Space for fixed top-bar and main-nav */
+    padding-top: 55px; /* Default space for top-bar */
+}
+
+body:has(.main-nav) {
+    padding-top: 110px; /* Space for top-bar and main-nav */
 }
 
 /* Top Bar */
@@ -107,6 +111,12 @@ body {
     max-width: 935px;
     margin: 20px auto;
     padding: 0 20px;
+}
+
+.main-content.full-screen {
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
 }
 
 /* Stories Bar */
@@ -716,23 +726,35 @@ body {
 }
 
 /* Reels Feed Styles */
+.reels-page-container {
+    height: calc(100vh - 55px); /* Full height minus top bar */
+    overflow-y: scroll;
+    scroll-snap-type: y mandatory;
+    padding: 0;
+    background-color: #000;
+}
+
+.reels-header {
+    text-align: center;
+    padding: 10px;
+    background: #000;
+    color: #fff;
+}
 .reels-container {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 20px 0;
-    gap: 30px;
-    background-color: #eef0f2; /* A slightly different background for the reels page */
+    gap: 0;
 }
 
 .reel-card {
-    width: 380px; /* Typical width for a mobile-centric view */
-    height: 680px; /* Typical height */
+    width: 100%;
+    max-width: 450px; /* Or a suitable max-width for larger screens */
+    height: calc(100vh - 55px); /* Full height minus top bar */
     background-color: #000;
-    border-radius: 12px;
     position: relative;
     overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    scroll-snap-align: start;
 }
 
 .reel-video-placeholder, .reel-video-placeholder img {
@@ -816,31 +838,17 @@ body {
     border: 1px solid #fff;
 }
 
-.reels-page-container {
-    padding-top: 55px; /* Height of the reels header */
-}
-
-.reels-header {
-    text-align: center;
-    padding: 10px;
-    background-color: #fff;
-    width: 100%;
-    border-bottom: 1px solid #dbdbdb;
-    position: fixed;
-    top: 110px; /* Below main nav */
-    left: 0;
-    z-index: 998;
-}
 .toggle-btn {
     padding: 8px 16px;
     border-radius: 18px;
-    border: 1px solid #dbdbdb;
-    background-color: transparent;
+    border: none;
+    background-color: #262626;
     font-weight: bold;
     cursor: pointer;
     margin: 0 5px;
+    color: #fff;
 }
 .toggle-btn.active {
-    background-color: #000;
-    color: #fff;
+    background-color: #fff;
+    color: #000;
 }

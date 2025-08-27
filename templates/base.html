@@ -28,6 +28,7 @@
         </div>
     </header>
 
+    {% if request.endpoint != 'reels' %}
     <nav class="main-nav">
         <a href="{{ url_for('home') }}" class="nav-icon {% if request.endpoint == 'home' %}active{% endif %}"><i class="fas fa-home"></i></a>
         <a href="#" class="nav-icon"><i class="fas fa-user-friends"></i></a>
@@ -36,8 +37,9 @@
         <a href="#" class="nav-icon"><i class="fas fa-bell"></i></a>
         <a href="#" class="nav-icon"><i class="fas fa-bars"></i></a>
     </nav>
+    {% endif %}
 
-    <main class="main-content">
+    <main class="main-content {% if request.endpoint == 'reels' %}full-screen{% endif %}">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 <div class="flash-messages">
