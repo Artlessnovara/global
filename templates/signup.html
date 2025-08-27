@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - GLOOBA</title>
+    <style>
+        /* Basic styles, will be improved later */
+        body { font-family: sans-serif; background-color: #fafafa; }
+        .container { max-width: 400px; margin: 50px auto; padding: 20px; background-color: #fff; border: 1px solid #ddd; border-radius: 5px; }
+        h2 { text-align: center; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; }
+        input[type="text"], input[type="email"], input[type="password"], input[type="date"] { width: 100%; padding: 8px; box-sizing: border-box; }
+        .btn { display: block; width: 100%; padding: 10px; background-color: #3897f0; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .alert { padding: 15px; margin-bottom: 20px; border: 1px solid transparent; border-radius: 4px; }
+        .alert-error { color: #a94442; background-color: #f2dede; border-color: #ebccd1; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <h2>Create your account</h2>
+        <form method="POST">
+            {% if step == 1 %}
+                <h3>Step 1: What's your name?</h3>
+                <div class="form-group">
+                    <label for="full_name">Full Name</label>
+                    <input type="text" id="full_name" name="full_name" value="{{ form_data.get('full_name', '') }}" required>
+                </div>
+            {% elif step == 2 %}
+                <h3>Step 2: Email or Phone</h3>
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" value="{{ form_data.get('email', '') }}">
+                </div>
+                 <p>or</p>
+                 <div class="form-group">
+                    <label for="phone">Phone</label>
+                    <input type="text" id="phone" name="phone" value="{{ form_data.get('phone', '') }}">
+                </div>
+            {% elif step == 3 %}
+                <h3>Step 3: Choose a username</h3>
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" value="{{ form_data.get('username', '') }}" required>
+                </div>
+            {% elif step == 4 %}
+                <h3>Step 4: Create a password</h3>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+            {% elif step == 5 %}
+                <h3>Step 5: Confirm your password</h3>
+                <div class="form-group">
+                    <label for="confirm_password">Confirm Password</label>
+                    <input type="password" id="confirm_password" name="confirm_password" required>
+                </div>
+            {% elif step == 6 %}
+                <h3>Step 6: What's your date of birth?</h3>
+                <div class="form-group">
+                    <label for="date_of_birth">Date of Birth</label>
+                    <input type="date" id="date_of_birth" name="date_of_birth" value="{{ form_data.get('date_of_birth', '') }}" required>
+                </div>
+            {% endif %}
+            <button type="submit" class="btn">
+                {% if step == 6 %}Finish{% else %}Next{% endif %}
+            </button>
+        </form>
+    </div>
+</body>
+</html>

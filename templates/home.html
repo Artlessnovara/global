@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Home - GLOOBA{% endblock %}
+
+{% block content %}
+<div class="home-container">
+    <!-- Stories Bar -->
+    <div class="stories-bar">
+        <div class="story add-story">
+            <div class="story-avatar">
+                <img src="https://i.pravatar.cc/150?u={{ g.user.username }}" alt="Your Story">
+                <div class="add-icon">+</div>
+            </div>
+            <span class="story-username">Add Story</span>
+        </div>
+        {% for story in stories %}
+        <div class="story">
+            <div class="story-avatar">
+                <img src="https://i.pravatar.cc/150?u={{ story.author.username }}" alt="{{ story.author.username }}'s Story">
+            </div>
+            <span class="story-username">{{ story.author.username }}</span>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Create Post Bar -->
+    <div class="create-post-bar" onclick="openComposer()">
+        <div class="user-avatar">
+            <img src="https://i.pravatar.cc/150?u={{ g.user.username }}" alt="Your avatar">
+        </div>
+        <div class="prompt-text">What's on your mind, {% if g.user %}{{ g.user.full_name.split()[0] }}{% endif %}?</div>
+    </div>
+
+    <!-- Post Feed -->
+    <div class="feed">
+        {% if posts %}
+            {% for post in posts %}
+            <div class="post-card">
+                <div class="post-header">
+                    <div class="post-author-info">
+                        <img src="https://i.pravatar.cc/150?u={{ post.author.username }}" alt="{{ post.author.username }}'s avatar" class="author-avatar">
+                        <div>
+                            <a href="#" class="author-name">{{ post.author.full_name }}</a>
+                            <div class="post-meta">
+                                <span>{{ post.created_at.strftime('%b %d, %Y') }}</span> &middot; <span class="mode-tag">@{{ post.mode }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="follow-button-placeholder">Follow</div>
+                </div>
+                <div class="post-content">
+                    <p>{{ post.text }}</p>
+                </div>
+                <div class="post-footer">
+                    <div class="post-actions">
+                        <button class="action-btn"><i class="far fa-heart"></i> React</button>
+                        <button class="action-btn"><i class="far fa-comment"></i> Comment</button>
+                        <button class="action-btn"><i class="far fa-share-square"></i> Share</button>
+                        <button class="action-btn"><i class="fas fa-retweet"></i> Repost</button>
+                    </div>
+                    <div class="post-stats">
+                        <span>0 Reactions</span>
+                        <span>0 Comments</span>
+                        <span>0 Shares</span>
+                        <span>0 Reposts</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="post-placeholder">
+                <h2>No posts yet!</h2>
+                <p>Be the first to share something with the world.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Post Composer Modal -->
+<div id="post-composer-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Create Post</h2>
+            <button class="close-button" onclick="closeComposer()">&times;</button>
+        </div>
+        <form method="POST" action="{{ url_for('create_post') }}">
+            <div class="modal-body">
+                <textarea name="text_content" placeholder="What's on your mind?"></textarea>
+                <div class="form-group">
+                    <label for="mode-select">Choose a mode:</label>
+                    <select name="mode" id="mode-select" required>
+                        <option value="">Select Mode</option>
+                        <option value="Education">Education</option>
+                        <option value="Music">Music</option>
+                        <option value="Sports">Sports</option>
+                        <option value="Gaming">Gaming</option>
+                        <option value="Travel">Travel</option>
+                        <option value="Food">Food</option>
+                    </select>
+                </div>
+                <div class="post-options">
+                    <span>Add to your post:</span>
+                    <div>
+                        <i class="fas fa-image"></i>
+                        <i class="fas fa-video"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-post">Post</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
