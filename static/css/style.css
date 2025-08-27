@@ -852,3 +852,96 @@ body:has(.main-nav) {
     background-color: #fff;
     color: #000;
 }
+
+/* Settings Page */
+.settings-container {
+    max-width: 700px;
+    margin: 20px auto;
+}
+
+.settings-card {
+    background-color: #fff;
+    border: 1px solid #dbdbdb;
+    border-radius: 8px;
+    padding: 25px;
+}
+
+.mode-checkboxes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.btn-save-settings {
+    background-color: #0095f6;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.btn-save-settings:hover {
+    background-color: #0077c2;
+}
+
+/* Suggestions Page */
+.suggestions-container {
+    max-width: 600px;
+    margin: 20px auto;
+}
+
+.suggestions-list {
+    background-color: #fff;
+    border: 1px solid #dbdbdb;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.suggestion-card {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    gap: 15px;
+}
+
+.suggestion-card:not(:last-child) {
+    border-bottom: 1px solid #efefef;
+}
+
+.suggestion-avatar {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+}
+
+.suggestion-info {
+    flex-grow: 1;
+}
+
+.suggestion-name {
+    font-weight: bold;
+    color: #262626;
+    text-decoration: none;
+    display: block;
+}
+.suggestion-name:hover {
+    text-decoration: underline;
+}
+
+.suggestion-username {
+    font-size: 14px;
+    color: #8e8e8e;
+}
+
+.suggestion-action .follow-btn {
+    padding: 6px 20px;
+}

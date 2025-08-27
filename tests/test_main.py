@@ -1,6 +1,6 @@
 import pytest
 from tests.test_auth import register_user, login
-from app import Post
+from app import Post, User, db
 
 def test_loading_page(client):
     """Test that the loading page is the first page seen."""
@@ -54,3 +54,53 @@ def test_create_and_view_post(client):
     assert b'@Testing' in home_response_after.data
     # Check for the author's full name: 'Postuser User'
     assert b'Postuser User' in home_response_after.data
+
+def test_settings_page(client):
+    """Test that a user can view and update their settings."""
+    register_user(username='settingsuser', password='password')
+    login(client, 'settingsuser', 'password')
+
+    # Test GET request
+    response = client.get('/settings')
+    assert response.status_code == 200
+    assert b'Mode Preferences' in response.data
+
+    # Test POST request to update preferences
+    response = client.post('/settings', data={
+        'modes': ['Music', 'Gaming']
+    }, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b'Your preferences have been updated.' in response.data
+
+    # Verify the changes in the user object
+    user = User.query.filter_by(username='settingsuser').first()
+    assert user.preferred_modes == 'Music,Gaming'
+
+def test_suggestions_page(client):
+    """Test the suggestion logic."""
+    # Create users
+    main_user = register_user(username='mainuser', password='password')
+    music_user = register_user(username='musicuser', email='music@test.com')
+    sports_user = register_user(username='sportsuser', email='sports@test.com')
+
+    # Create posts for those users
+    music_post = Post(user_id=music_user.id, content_type='text', text='A music post', mode='Music')
+    sports_post = Post(user_id=sports_user.id, content_type='text', text='A sports post', mode='Sports')
+    db.session.add_all([music_post, sports_post])
+    db.session.commit()
+
+    # Log in as main user
+    login(client, 'mainuser', 'password')
+
+    # Set preferred modes for main user
+    client.post('/settings', data={'modes': ['Music']})
+
+    # Go to suggestions page
+    response = client.get('/suggestions')
+    assert response.status_code == 200
+
+    # Check that the music user is suggested
+    assert b'@musicuser' in response.data
+    # Check that the sports user is NOT suggested
+    assert b'@sportsuser' not in response.data

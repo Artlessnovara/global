@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - GLOOBA{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <h2>Settings</h2>
+    <div class="settings-card">
+        <h3>Mode Preferences</h3>
+        <p>Select your favorite modes to get better content suggestions.</p>
+        <form method="POST">
+            <div class="form-group mode-checkboxes">
+                {% for mode in available_modes %}
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="modes" value="{{ mode }}" {% if mode in user_modes %}checked{% endif %}>
+                        {{ mode }}
+                    </label>
+                {% endfor %}
+            </div>
+            <button type="submit" class="btn-save-settings">Save Preferences</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Suggestions - GLOOBA{% endblock %}
+
+{% block content %}
+<div class="suggestions-container">
+    <h2>Suggestions For You</h2>
+    <p>People you might want to follow based on your interests.</p>
+    <div class="suggestions-list">
+        {% if suggested_users %}
+            {% for user in suggested_users %}
+                <div class="suggestion-card">
+                    <a href="{{ url_for('profile', username=user.username) }}">
+                        <img src="https://i.pravatar.cc/150?u={{ user.username }}" alt="{{ user.username }}'s avatar" class="suggestion-avatar">
+                    </a>
+                    <div class="suggestion-info">
+                        <a href="{{ url_for('profile', username=user.username) }}" class="suggestion-name">{{ user.full_name }}</a>
+                        <span class="suggestion-username">@{{ user.username }}</span>
+                    </div>
+                    <div class="suggestion-action">
+                        <a href="{{ url_for('follow', user_id=user.id) }}" class="follow-btn">Follow</a>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>No suggestions for you right now. Try selecting some modes in your settings!</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

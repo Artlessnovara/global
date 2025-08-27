@@ -48,6 +48,7 @@ class User(db.Model):
     location = db.Column(db.String(100), nullable=True)
     work_education = db.Column(db.String(150), nullable=True)
     country = db.Column(db.String(100), nullable=True)
+    preferred_modes = db.Column(db.Text, nullable=True)
 
     posts = db.relationship('Post', backref='author', lazy='dynamic')
     stories = db.relationship('Story', backref='author', lazy=True)
@@ -325,6 +326,43 @@ def home():
     posts = Post.query.order_by(Post.created_at.desc()).all()
 
     return render_template('home.html', stories=stories, posts=posts)
+
+# I'll define the available modes here for now
+AVAILABLE_MODES = ['Education', 'Music', 'Sports', 'Gaming', 'Travel', 'Food']
+
+@app.route('/settings', methods=['GET', 'POST'])
+@login_required
+def settings():
+    if request.method == 'POST':
+        selected_modes = request.form.getlist('modes')
+        g.user.preferred_modes = ','.join(selected_modes)
+        db.session.commit()
+        flash('Your preferences have been updated.', 'success')
+        return redirect(url_for('settings'))
+
+    user_modes = g.user.preferred_modes.split(',') if g.user.preferred_modes else []
+    return render_template('settings.html', available_modes=AVAILABLE_MODES, user_modes=user_modes)
+
+@app.route('/suggestions')
+@login_required
+def suggestions():
+    preferred_modes = g.user.preferred_modes
+    suggested_users = []
+
+    if preferred_modes:
+        modes_list = preferred_modes.split(',')
+
+        # Get IDs of users the current user already follows
+        followed_user_ids = [user.id for user in g.user.followed]
+
+        # Find users who posted in the preferred modes, excluding the current user and those already followed.
+        suggested_users = db.session.query(User).join(Post).filter(
+            Post.mode.in_(modes_list),
+            User.id != g.user.id,
+            ~User.id.in_(followed_user_ids)
+        ).distinct().limit(20).all()
+
+    return render_template('suggestions.html', suggested_users=suggested_users)
 
 @app.route('/reels')
 @login_required
