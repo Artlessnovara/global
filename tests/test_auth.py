@@ -35,22 +35,31 @@ def test_signup_page(client):
 
 def test_successful_signup_creation(client):
     """
-    Test that the user creation logic at the end of the new 5-step signup flow works correctly.
-    This test simulates the state of the session just before the final step.
+    Test the full, multi-step signup flow from start to finish.
+    This acts as an end-to-end regression test for the session handling.
     """
-    with client.session_transaction() as sess:
-        sess['signup_form'] = {
-            'full_name': 'Test User',
-            'email': 'test@example.com',
-            'username': 'testuser',
-            'password': 'password'
-        }
+    # Step 1: Submit name
+    client.post('/signup/1', data={'full_name': 'Full End User'})
 
-    # Now, submit the final step (which is now step 5)
-    response = client.post('/signup/5', data={'date_of_birth': '2000-01-01'}, follow_redirects=True)
+    # Step 2: Submit email
+    client.post('/signup/2', data={'email': 'enduser@test.com'})
 
+    # Step 3: Submit username
+    client.post('/signup/3', data={'username': 'enduser'})
+
+    # Step 4: Submit password
+    client.post('/signup/4', data={'password': 'password123'})
+
+    # Step 5: Submit DOB and finalize
+    response = client.post('/signup/5', data={'date_of_birth': '1999-05-05'}, follow_redirects=True)
+
+    assert response.status_code == 200
     assert b'Account created successfully! Please log in.' in response.data
-    assert User.query.filter_by(username='testuser').count() == 1
+
+    user = User.query.filter_by(username='enduser').first()
+    assert user is not None
+    assert user.full_name == 'Full End User'
+    assert user.check_password('password123')
 
 def test_signup_duplicate_username(client):
     """Test that signing up with a duplicate username fails."""

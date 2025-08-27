@@ -279,6 +279,8 @@ def signup_step(step):
         for key, value in request.form.items():
             if value:
                 session['signup_form'][key] = value
+        session.modified = True # Ensure session changes are saved
+
         if step == 2:
             email = session['signup_form'].get('email')
             phone = session['signup_form'].get('phone')
