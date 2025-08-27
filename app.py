@@ -296,7 +296,15 @@ def signup_step(step):
             if User.query.filter_by(username=username).first():
                 flash('Username is already taken.', 'error')
                 return redirect(url_for('signup_step', step=3))
+        elif step == 4:
+            password = session.get('signup_form', {}).get('password')
+            if not password:
+                flash('Password cannot be empty.', 'error')
+                return redirect(url_for('signup_step', step=4))
         elif step == 5:
+            if 'password' not in session.get('signup_form', {}):
+                flash('An error occurred. Please enter your password again.', 'error')
+                return redirect(url_for('signup_step', step=4))
             try:
                 form_data = session['signup_form']
                 dob = datetime.strptime(form_data.get('date_of_birth'), '%Y-%m-%d').date()

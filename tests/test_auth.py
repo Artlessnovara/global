@@ -90,3 +90,18 @@ def test_login_unregistered_user(client):
     """Test logging in with a username that does not exist."""
     response = login(client, 'nonexistentuser', 'password')
     assert b'Invalid username/email or password.' in response.data
+
+def test_signup_empty_password_fails(client):
+    """Test that submitting an empty password at step 4 fails."""
+    with client.session_transaction() as sess:
+        sess['signup_form'] = {
+            'full_name': 'Test User',
+            'email': 'test@example.com',
+            'username': 'testuser'
+        }
+
+    response = client.post('/signup/4', data={'password': ''}, follow_redirects=True)
+
+    assert b'Password cannot be empty.' in response.data
+    # Should stay on step 4
+    assert b'Step 4: Create a password' in response.data
