@@ -1,0 +1,43 @@
+<div class="post-card">
+    <div class="post-header">
+        <div class="post-author-info">
+            <a href="{{ url_for('profile', username=post.author.username) }}">
+                <img src="https://i.pravatar.cc/150?u={{ post.author.username }}" alt="{{ post.author.username }}'s avatar" class="author-avatar">
+            </a>
+            <div>
+                <a href="{{ url_for('profile', username=post.author.username) }}" class="author-name">{{ post.author.full_name }}</a>
+                <div class="post-meta">
+                    <span>{{ post.created_at|humanize_time }}</span> &middot; <span class="mode-tag">@{{ post.mode }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="post-header-right">
+            {% if post.author != g.user %}
+                {% if g.user.is_following(post.author) %}
+                    <a href="{{ url_for('unfollow', user_id=post.author.id) }}" class="follow-btn following">Following</a>
+                {% else %}
+                    <a href="{{ url_for('follow', user_id=post.author.id) }}" class="follow-btn">Follow</a>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+    <div class="post-content">
+        <p>{{ post.text }}</p>
+    </div>
+    <div class="post-footer">
+        <div class="post-actions">
+            <a href="{{ url_for('react', post_id=post.id) }}" class="action-btn {% if g.user.has_reacted_to(post) %}reacted{% endif %}">
+                <i class="fa-heart {% if g.user.has_reacted_to(post) %}fas{% else %}far{% endif %}"></i> React
+            </a>
+            <button class="action-btn"><i class="far fa-comment"></i> Comment</button>
+            <button class="action-btn"><i class="far fa-share-square"></i> Share</button>
+            <button class="action-btn"><i class="fas fa-retweet"></i> Repost</button>
+        </div>
+        <div class="post-stats">
+            <span>{{ post.reactions.count() }} Reactions</span>
+            <span>0 Comments</span>
+            <span>0 Shares</span>
+            <span>0 Reposts</span>
+        </div>
+    </div>
+</div>

@@ -488,6 +488,224 @@ body {
     font-weight: bold;
 }
 
+/* Profile Page Styles */
+.profile-page {
+    max-width: 975px;
+    margin: 0 auto;
+}
+
+.profile-header {
+    background-color: #fff;
+    border: 1px solid #dbdbdb;
+    border-radius: 8px;
+    margin-bottom: 25px;
+    overflow: hidden; /* Contains the cover photo */
+}
+
+.profile-cover-photo {
+    width: 100%;
+    height: 250px;
+    background-color: #efefef; /* Fallback color */
+}
+
+.profile-cover-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.profile-header-main {
+    display: flex;
+    align-items: flex-end;
+    padding: 0 30px 20px 30px;
+    margin-top: -80px; /* Overlap effect */
+    position: relative;
+    z-index: 1;
+}
+
+.profile-picture-container {
+    width: 168px;
+    height: 168px;
+    border-radius: 50%;
+    background-color: #fff;
+    padding: 5px;
+    flex-shrink: 0;
+    box-shadow: 0 0 10px rgba(0,0,0,0.2);
+}
+
+.profile-picture {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.profile-details {
+    margin-left: 30px;
+    color: #fff; /* White text to show on cover photo */
+    text-shadow: 1px 1px 3px rgba(0,0,0,0.5); /* Shadow for readability */
+}
+
+.display-name {
+    font-size: 28px;
+    font-weight: bold;
+    margin: 0;
+}
+
+.username {
+    font-size: 16px;
+    margin: 4px 0 12px 0;
+}
+
+.profile-stats {
+    display: flex;
+    gap: 25px;
+}
+
+.profile-stats span {
+    font-size: 16px;
+}
+
+.profile-actions-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 30px;
+    background-color: #fff;
+    border-bottom: 1px solid #dbdbdb;
+    margin-top: -1px; /* Overlap with header border */
+}
+
+.action-buttons-left {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-profile-action {
+    padding: 8px 16px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 14px;
+    background-color: #e4e6eb;
+    color: #050505;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    cursor: pointer;
+}
+.btn-profile-action:hover {
+    background-color: #d8dadf;
+}
+.btn-profile-action.follow { /* Follow button should be primary */
+    background-color: #0095f6;
+    color: #fff;
+}
+.btn-profile-action.follow:hover {
+    background-color: #0077c2;
+}
+
+.profile-body {
+    display: flex;
+    gap: 20px;
+    padding: 0 30px;
+}
+
+.profile-sidebar {
+    width: 40%;
+    flex-shrink: 0;
+}
+
+.profile-main-content {
+    width: 60%;
+}
+
+.profile-info-section {
+    padding: 20px;
+    background-color: #fff;
+    border-radius: 8px;
+    border: 1px solid #dbdbdb;
+}
+
+.profile-info-section h4 {
+    font-size: 18px;
+    font-weight: bold;
+    margin: 0 0 15px 0;
+}
+
+.profile-info-section ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.profile-info-section li {
+    margin-bottom: 12px;
+    color: #333;
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+}
+
+.profile-info-section li i {
+    width: 20px;
+    text-align: center;
+    margin-right: 10px;
+    color: #8e8e8e;
+}
+
+/* Profile Content Tabs */
+.profile-nav-tabs {
+    display: flex;
+    justify-content: center;
+    border-top: 1px solid #dbdbdb;
+}
+
+.tab-link {
+    background: none;
+    border: none;
+    padding: 15px;
+    cursor: pointer;
+    font-weight: bold;
+    color: #8e8e8e;
+    border-top: 1px solid transparent;
+    margin-top: -1px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tab-link.active {
+    color: #262626;
+    border-top-color: #262626;
+}
+
+/* Post Grid */
+.post-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+    margin-top: 20px;
+}
+
+.grid-item-placeholder {
+    width: 100%;
+    padding-bottom: 100%; /* Creates a square aspect ratio */
+    background-color: #efefef;
+    border-radius: 5px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    color: #8e8e8e;
+}
+
+.grid-item-placeholder i {
+    font-size: 48px;
+    margin-bottom: 10px;
+}
+
 .post-stats {
     display: flex;
     justify-content: space-between;

@@ -29,10 +29,10 @@
     </header>
 
     <nav class="main-nav">
-        <a href="{{ url_for('home') }}" class="nav-icon active"><i class="fas fa-home"></i></a>
+        <a href="{{ url_for('home') }}" class="nav-icon {% if request.endpoint == 'home' %}active{% endif %}"><i class="fas fa-home"></i></a>
         <a href="#" class="nav-icon"><i class="fas fa-user-friends"></i></a>
         <a href="#" class="nav-icon"><i class="fas fa-video"></i></a>
-        <a href="#" class="nav-icon"><i class="fas fa-user-circle"></i></a>
+        <a href="{{ url_for('profile', username=g.user.username) }}" class="nav-icon {% if request.endpoint == 'profile' %}active{% endif %}"><i class="fas fa-user-circle"></i></a>
         <a href="#" class="nav-icon"><i class="fas fa-bell"></i></a>
         <a href="#" class="nav-icon"><i class="fas fa-bars"></i></a>
     </nav>
@@ -78,6 +78,20 @@
             } else {
                 premiumSection.style.display = 'none';
             }
+        }
+
+        function openTab(evt, tabName) {
+            var i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tab-content");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            tablinks = document.getElementsByClassName("tab-link");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
         }
     </script>
 </body>

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}{{ user.full_name }} (@{{ user.username }}){% endblock %}
+
+{% block content %}
+<div class="profile-page">
+    <header class="profile-header">
+        <div class="profile-cover-photo">
+            <!-- Placeholder for cover photo -->
+            <img src="https://i.pravatar.cc/1000?u=cover-{{ user.username }}" alt="Cover Photo">
+        </div>
+        <div class="profile-header-main">
+            <div class="profile-picture-container">
+                <img src="https://i.pravatar.cc/150?u={{ user.username }}" alt="Profile Picture" class="profile-picture">
+            </div>
+            <div class="profile-details">
+                <h2 class="display-name">{{ user.full_name }}</h2>
+                <p class="username">@{{ user.username }}</p>
+                <div class="profile-stats">
+                    <span><strong>{{ stats.posts }}</strong> posts</span>
+                    <span><strong>{{ stats.followers }}</strong> followers</span>
+                    <span><strong>{{ stats.following }}</strong> following</span>
+                </div>
+            </div>
+        </div>
+    </header>
+    <div class="profile-actions-bar">
+        <div class="action-buttons-left">
+            {% if user != g.user %}
+                {% if g.user.is_following(user) %}
+                    <a href="{{ url_for('unfollow', user_id=user.id) }}" class="btn-profile-action following">Following</a>
+                {% else %}
+                    <a href="{{ url_for('follow', user_id=user.id) }}" class="btn-profile-action follow">Follow</a>
+                {% endif %}
+                <a href="#" class="btn-profile-action">Message</a>
+            {% else %}
+                <a href="#" class="btn-profile-action">Edit Profile</a>
+            {% endif %}
+        </div>
+        <div class="action-buttons-right">
+            <a href="#" class="btn-profile-action more-btn"><i class="fas fa-ellipsis-h"></i></a>
+        </div>
+    </div>
+
+    <div class="profile-body">
+        <div class="profile-sidebar">
+             <div class="profile-info-section">
+                <h4>Intro</h4>
+                <ul>
+                    {% if user.bio %}
+                        <li><i class="fas fa-info-circle"></i> {{ user.bio }}</li>
+                    {% endif %}
+                    {% if user.location %}
+                        <li><i class="fas fa-map-marker-alt"></i> Lives in <strong>{{ user.location }}</strong></li>
+                    {% endif %}
+                    {% if user.work_education %}
+                        <li><i class="fas fa-briefcase"></i> Works at <strong>{{ user.work_education }}</strong></li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+        <div class="profile-main-content">
+            <div class="profile-nav-tabs">
+                <button class="tab-link active" onclick="openTab(event, 'feed-view')"><i class="fas fa-th-list"></i> POSTS</button>
+                <button class="tab-link" onclick="openTab(event, 'grid-view')"><i class="fas fa-th"></i> GRID</button>
+            </div>
+
+            <div id="feed-view" class="tab-content" style="display: block;">
+                {% if posts %}
+                    {% for post in posts %}
+                        {% include '_post_card.html' %}
+                    {% endfor %}
+                {% else %}
+                    <div class="post-placeholder">
+                        <h2>No posts yet.</h2>
+                    </div>
+                {% endif %}
+            </div>
+
+            <div id="grid-view" class="tab-content" style="display: none;">
+                <div class="post-grid">
+                    <!-- For now, we just show placeholders. Later, this will loop through posts. -->
+                    {% for post in posts %}
+                        <div class="grid-item">
+                            <!-- In a real app, this would be a thumbnail of the post's image/video -->
+                            <div class="grid-item-placeholder">
+                                <i class="fas fa-image"></i>
+                                <p>{{ post.mode }}</p>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -42,6 +42,12 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_premium = db.Column(db.Boolean, default=False, nullable=False)
 
+    # New profile fields
+    cover_photo_path = db.Column(db.String(255), nullable=True)
+    bio = db.Column(db.Text, nullable=True)
+    location = db.Column(db.String(100), nullable=True)
+    work_education = db.Column(db.String(150), nullable=True)
+
     posts = db.relationship('Post', backref='author', lazy='dynamic')
     stories = db.relationship('Story', backref='author', lazy=True)
     reactions = db.relationship('Reaction', backref='user', lazy='dynamic')
@@ -292,6 +298,21 @@ def create_post():
 
     flash('Your post has been created!', 'success')
     return redirect(url_for('home'))
+
+@app.route('/profile/<username>')
+@login_required
+def profile(username):
+    user = User.query.filter_by(username=username).first_or_404()
+
+    stats = {
+        'posts': user.posts.count(),
+        'followers': user.followers.count(),
+        'following': user.followed.count()
+    }
+
+    posts = user.posts.order_by(Post.created_at.desc()).all()
+
+    return render_template('profile.html', user=user, stats=stats, posts=posts)
 
 @app.route('/home')
 @login_required
