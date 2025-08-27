@@ -785,10 +785,32 @@ body:has(.main-nav) {
 .post-stats {
     display: flex;
     justify-content: space-between;
-    font-size: 12px;
+    align-items: center;
+    font-size: 14px;
     color: #8e8e8e;
-    padding: 8px 0;
+    padding: 10px 15px;
+}
+
+.stat-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.right-stats {
+    display: flex;
+    gap: 15px;
+}
+
+.reactions-stat .fa-heart {
+    color: #ed4956;
+}
+
+.post-actions {
     border-top: 1px solid #efefef;
+    display: flex;
+    justify-content: space-around;
+    padding: 5px 0;
 }
 
 /* Reels Feed Styles */

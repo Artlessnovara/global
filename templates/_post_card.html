@@ -25,19 +25,23 @@
         <p>{{ post.text }}</p>
     </div>
     <div class="post-footer">
+        <div class="post-stats">
+            <span class="stat-item reactions-stat">
+                <i class="fas fa-heart"></i> {{ post.reactions.count() }}
+            </span>
+            <div class="right-stats">
+                <span class="stat-item">0 Comments</span>
+                <span class="stat-item">0 Reposts</span>
+                <span class="stat-item">0 Shares</span>
+            </div>
+        </div>
         <div class="post-actions">
             <a href="{{ url_for('react', post_id=post.id) }}" class="action-btn {% if g.user.has_reacted_to(post) %}reacted{% endif %}">
                 <i class="fa-heart {% if g.user.has_reacted_to(post) %}fas{% else %}far{% endif %}"></i> React
             </a>
             <button class="action-btn"><i class="far fa-comment"></i> Comment</button>
-            <button class="action-btn"><i class="far fa-share-square"></i> Share</button>
             <button class="action-btn"><i class="fas fa-retweet"></i> Repost</button>
-        </div>
-        <div class="post-stats">
-            <span>{{ post.reactions.count() }} Reactions</span>
-            <span>0 Comments</span>
-            <span>0 Shares</span>
-            <span>0 Reposts</span>
+            <button class="action-btn"><i class="far fa-share-square"></i> Share</button>
         </div>
     </div>
 </div>
