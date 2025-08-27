@@ -8,39 +8,70 @@
         <h2>Inbox</h2>
         <a href="#" class="new-message-btn"><i class="fas fa-edit"></i></a>
     </div>
-    <div class="chat-list">
-        {% if participant_entries %}
-            {% for p_entry in participant_entries %}
-                {% set convo = p_entry.conversation %}
-                <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-list-item">
-                    <!-- For a 1-on-1 chat, find the other participant -->
-                    {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
-                    {% if other_participant %}
-                        {% set other_user = other_participant.user %}
-                        <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
-                        <div class="chat-item-details">
-                            <span class="chat-item-name">{{ other_user.full_name }}</span>
-                            <span class="chat-item-preview">
-                                {% if convo.messages.order_by(Message.created_at.desc()).first() %}
-                                    {{ convo.messages.order_by(Message.created_at.desc()).first().body[:30] }}...
-                                {% else %}
-                                    No messages yet.
-                                {% endif %}
-                            </span>
-                        </div>
-                        {% set unread_count = convo.unread_messages_for(g.user) %}
-                        {% if unread_count > 0 %}
-                            <span class="unread-dot"></span>
+
+    <div class="profile-nav-tabs">
+        <button class="tab-link active" onclick="openTab(event, 'recent')">Recent</button>
+    <button class="tab-link" onclick="openTab(event, 'requests')">Requests {% if message_requests|length > 0 %}({{ message_requests|length }}){% endif %}</button>
+    </div>
+
+    <div id="recent" class="tab-content" style="display: block;">
+        <div class="chat-list">
+            {% if active_chats %}
+                {% for p_entry in active_chats %}
+                    {% set convo = p_entry.conversation %}
+                    <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-list-item">
+                        {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
+                        {% if other_participant %}
+                            {% set other_user = other_participant.user %}
+                            <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
+                            <div class="chat-item-details">
+                                <span class="chat-item-name">{{ other_user.full_name }}</span>
+                                <span class="chat-item-preview">
+                                    {% if convo.messages.order_by(Message.created_at.desc()).first() %}
+                                        {{ convo.messages.order_by(Message.created_at.desc()).first().body[:30] }}...
+                                    {% else %}
+                                        No messages yet.
+                                    {% endif %}
+                                </span>
+                            </div>
+                            {% set unread_count = convo.unread_messages_for(g.user) %}
+                            {% if unread_count > 0 %}
+                                <span class="unread-dot"></span>
+                            {% endif %}
                         {% endif %}
-                    {% endif %}
-                </a>
-            {% endfor %}
-        {% else %}
-            <div class="no-chats">
-                <p>You have no conversations yet.</p>
-                <p>Start a new chat from a user's profile.</p>
-            </div>
-        {% endif %}
+                    </a>
+                {% endfor %}
+            {% else %}
+                <div class="no-chats">
+                    <p>You have no conversations yet.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div id="requests" class="tab-content" style="display: none;">
+        <div class="chat-list">
+            {% if message_requests %}
+                {% for p_entry in message_requests %}
+                    {% set convo = p_entry.conversation %}
+                    <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-list-item">
+                        {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
+                        {% if other_participant %}
+                            {% set other_user = other_participant.user %}
+                            <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
+                            <div class="chat-item-details">
+                                <span class="chat-item-name">{{ other_user.full_name }}</span>
+                                <span class="chat-item-preview">Wants to send you a message.</span>
+                            </div>
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            {% else %}
+                <div class="no-chats">
+                    <p>You have no message requests.</p>
+                </div>
+            {% endif %}
+        </div>
     </div>
 </div>
 {% endblock %}

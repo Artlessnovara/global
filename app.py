@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from flask import Flask, render_template, request, redirect, url_for, session, flash, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -13,7 +13,11 @@ app = Flask(__name__)
 
 @app.template_filter('humanize_time')
 def _jinja2_filter_humanize_time(dt):
-    now_utc = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
+    # If the datetime is naive, make it aware (assuming it's UTC)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
     if dt > now_utc:
         return "in the future"
     return humanize.naturaltime(now_utc - dt)
@@ -30,7 +34,7 @@ followers = db.Table('followers',
 )
 
 user_modes = db.Table('user_modes',
-    db.Column('user_id', db.Integer, db.ForeignKey('users.id')),
+    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
     db.Column('mode_id', db.Integer, db.ForeignKey('modes.id'), primary_key=True)
 )
 
@@ -44,7 +48,7 @@ class User(db.Model):
     phone = db.Column(db.String(20), unique=True, nullable=True)
     password_hash = db.Column(db.String(256), nullable=False)
     date_of_birth = db.Column(db.Date, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     is_premium = db.Column(db.Boolean, default=False, nullable=False)
     cover_photo_path = db.Column(db.String(255), nullable=True)
     bio = db.Column(db.Text, nullable=True)
@@ -55,7 +59,7 @@ class User(db.Model):
     posts = db.relationship('Post', backref='author', lazy='dynamic')
     stories = db.relationship('Story', backref='author', lazy=True)
     reactions = db.relationship('Reaction', backref='user', lazy='dynamic')
-    conversations = db.relationship('Participant', cascade="all, delete-orphan")
+    conversations = db.relationship('Participant', back_populates='user', cascade="all, delete-orphan")
     preferred_modes = db.relationship('Mode', secondary=user_modes, lazy='subquery', backref=db.backref('users', lazy=True))
 
     followed = db.relationship(
@@ -95,7 +99,7 @@ class Post(db.Model):
     content_path = db.Column(db.String(255), nullable=True)
     text = db.Column(db.Text, nullable=True)
     mode = db.Column(db.String(50), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     reactions = db.relationship('Reaction', backref='post', lazy='dynamic')
 
 class Story(db.Model):
@@ -103,8 +107,8 @@ class Story(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     media_path = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    expires_at = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(hours=24), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    expires_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) + timedelta(hours=24), nullable=False)
 
 class Reaction(db.Model):
     __tablename__ = 'reactions'
@@ -122,16 +126,17 @@ class Participant(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
-    last_read_at = db.Column(db.DateTime, default=datetime.utcnow)
-    user = db.relationship('User')
-    conversation = db.relationship('Conversation')
+    last_read_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    status = db.Column(db.String(20), default='active', nullable=False)
+    user = db.relationship('User', back_populates='conversations')
+    conversation = db.relationship('Conversation', back_populates='participants')
 
 class Conversation(db.Model):
     __tablename__ = 'conversations'
     id = db.Column(db.Integer, primary_key=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade="all, delete-orphan")
-    participants = db.relationship('Participant', cascade="all, delete-orphan")
+    participants = db.relationship('Participant', back_populates='conversation', cascade="all, delete-orphan")
 
     def unread_messages_for(self, user):
         participant = next((p for p in self.participants if p.user_id == user.id), None)
@@ -145,7 +150,7 @@ class Message(db.Model):
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     body = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     sender = db.relationship('User')
 
 # --- CLI COMMANDS ---
@@ -182,9 +187,11 @@ def load_logged_in_user():
 @app.context_processor
 def inject_unread_count():
     if g.user:
+        participant_entries = Participant.query.filter_by(user_id=g.user.id).all()
         total_unread = 0
-        for p_entry in g.user.conversations:
-            total_unread += p_entry.conversation.unread_messages_for(g.user)
+        for p_entry in participant_entries:
+            if p_entry.status == 'active':
+                total_unread += p_entry.conversation.unread_messages_for(g.user)
         return dict(total_unread_messages=total_unread)
     return dict(total_unread_messages=0)
 
@@ -366,17 +373,6 @@ def settings():
 def more():
     return render_template('more.html')
 
-@app.route('/modes/my')
-@login_required
-def my_modes():
-    return render_template('my_modes.html')
-
-@app.route('/modes/discover')
-@login_required
-def discover_modes():
-    all_modes = Mode.query.order_by(Mode.name).all()
-    return render_template('discover_modes.html', modes=all_modes)
-
 @app.route('/suggestions')
 @login_required
 def suggestions():
@@ -397,7 +393,7 @@ def message_thread(conversation_id):
         return "Not your conversation", 403
     participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
     if participant:
-        participant.last_read_at = datetime.utcnow()
+        participant.last_read_at = datetime.now(timezone.utc)
         db.session.commit()
     messages = convo.messages.order_by(Message.created_at.asc()).all()
     other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
@@ -423,23 +419,88 @@ def start_chat(user_id):
         return redirect(url_for('message_thread', conversation_id=existing_convo.id))
     else:
         new_convo = Conversation()
-        p1 = Participant(user=g.user, conversation=new_convo)
-        p2 = Participant(user=other_user, conversation=new_convo)
-        db.session.add_all([p1, p2])
+        p1_status = 'active'
+        p2_status = 'active' if other_user.is_following(g.user) else 'pending'
+        p1 = Participant(user=g.user, conversation=new_convo, status=p1_status)
+        p2 = Participant(user=other_user, conversation=new_convo, status=p2_status)
+        db.session.add_all([new_convo, p1, p2])
         db.session.commit()
         return redirect(url_for('message_thread', conversation_id=new_convo.id))
+
+@app.route('/chat/accept/<int:conversation_id>')
+@login_required
+def accept_chat(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+    if participant and participant.status == 'pending':
+        participant.status = 'active'
+        db.session.commit()
+        flash('Chat request accepted.', 'success')
+        return redirect(url_for('message_thread', conversation_id=conversation_id))
+    return redirect(url_for('chat_inbox'))
+
+@app.route('/chat/delete/<int:conversation_id>')
+@login_required
+def delete_chat(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    participant_users = [p.user for p in convo.participants]
+    if g.user not in participant_users:
+        return "Not your conversation", 403
+    db.session.delete(convo)
+    db.session.commit()
+    flash('Conversation deleted.', 'success')
+    return redirect(url_for('chat_inbox'))
+
+@app.route('/chat/block/<int:user_id>')
+@login_required
+def block_user_in_chat(user_id):
+    other_user = db.get_or_404(User, user_id)
+    pending_convo_entry = None
+    for p_entry in g.user.conversations:
+        if p_entry.status == 'pending':
+            convo = p_entry.conversation
+            other_participant = next((p for p in convo.participants if p.user_id != g.user.id), None)
+            if other_participant and other_participant.user_id == other_user.id:
+                pending_convo_entry = p_entry
+                break
+    if pending_convo_entry:
+        pending_convo_entry.status = 'blocked'
+        db.session.commit()
+        flash(f'You have blocked messages from {other_user.username}.', 'success')
+    return redirect(url_for('chat_inbox'))
 
 @app.route('/chat')
 @login_required
 def chat_inbox():
-    user_participant_entries = g.user.conversations
-    return render_template('chat_inbox.html', participant_entries=user_participant_entries, Message=Message)
+    user_participant_entries = Participant.query.filter_by(user_id=g.user.id).all()
+    active_chats = []
+    message_requests = []
+    for p_entry in user_participant_entries:
+        if p_entry.status == 'active':
+            active_chats.append(p_entry)
+        elif p_entry.status == 'pending':
+            message_requests.append(p_entry)
+    return render_template('chat_inbox.html', active_chats=active_chats, message_requests=message_requests, Message=Message)
 
 @app.route('/reels')
 @login_required
 def reels():
     video_posts = Post.query.filter_by(content_type='video').order_by(Post.created_at.desc()).all()
     return render_template('reels.html', posts=video_posts)
+
+@app.route('/modes/my')
+@login_required
+def my_modes():
+    """Displays the modes the current user has selected."""
+    user_modes = g.user.preferred_modes
+    return render_template('my_modes.html', modes=user_modes)
+
+@app.route('/modes/discover')
+@login_required
+def discover_modes():
+    """Displays all available modes for users to browse."""
+    all_modes = Mode.query.order_by(Mode.name).all()
+    return render_template('discover_modes.html', modes=all_modes)
 
 # --- SOCKETIO EVENTS ---
 @socketio.on('send_message')

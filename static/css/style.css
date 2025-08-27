@@ -1023,6 +1023,49 @@ body:has(.main-nav) {
     cursor: pointer;
 }
 
+/* Request Actions Footer */
+.request-actions-footer {
+    padding: 15px;
+    text-align: center;
+    border-top: 1px solid #dbdbdb;
+    background-color: #fafafa;
+}
+.request-actions-footer p {
+    font-size: 12px;
+    color: #8e8e8e;
+    margin: 0 0 10px 0;
+}
+.request-action-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+}
+.request-action-buttons a {
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 5px;
+    font-weight: bold;
+    font-size: 14px;
+}
+.btn-accept {
+    background-color: #0095f6;
+    color: #fff;
+}
+.btn-delete, .btn-block {
+    background-color: #e4e6eb;
+    color: #050505;
+}
+
+/* Request count badge */
+.req-count-badge {
+    background-color: #ed4956;
+    color: white;
+    font-size: 10px;
+    padding: 2px 5px;
+    border-radius: 10px;
+    margin-left: 5px;
+}
+
 .settings-card {
     background-color: #fff;
     border: 1px solid #dbdbdb;

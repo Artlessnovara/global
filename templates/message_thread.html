@@ -25,12 +25,24 @@
             </div>
         {% endfor %}
     </div>
+    {% set participant = conversation.participants|selectattr('user_id', 'equalto', g.user.id)|first %}
+    {% if participant and participant.status == 'pending' %}
+    <div class="request-actions-footer">
+        <p>This user wants to send you messages. You won't see their messages in your main inbox until you accept.</p>
+        <div class="request-action-buttons">
+            <a href="{{ url_for('accept_chat', conversation_id=conversation.id) }}" class="btn-accept">Accept</a>
+            <a href="{{ url_for('delete_chat', conversation_id=conversation.id) }}" class="btn-delete">Delete</a>
+            <a href="{{ url_for('block_user_in_chat', user_id=other_user.id) }}" class="btn-block">Block</a>
+        </div>
+    </div>
+    {% else %}
     <div class="message-composer">
-        <form method="POST">
+        <form>
             <input type="text" name="body" placeholder="Type a message..." autocomplete="off" required>
             <button type="submit"><i class="fas fa-paper-plane"></i></button>
         </form>
     </div>
+    {% endif %}
 </div>
 {% endblock %}
 

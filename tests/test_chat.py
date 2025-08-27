@@ -78,29 +78,46 @@ def test_send_and_receive_realtime_message(client, app):
     assert message is not None
     assert message.conversation_id == convo.id
 
-def test_unread_message_count(client, app):
-    """Test that unread message counts are calculated and displayed correctly."""
-    user1 = register_user(username='user1', email='user1@test.com', password='pw')
-    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+def test_message_request_flow(client):
+    """Test the full message request workflow."""
+    sender = register_user(username='sender', email='sender@test.com', password='pw')
+    recipient = register_user(username='recipient', email='recipient@test.com', password='pw')
 
-    login(client, 'user1', 'pw')
-    client.get(f'/chat/start/{user2.id}')
+    # Sender starts a chat with Recipient (who does not follow Sender)
+    login(client, 'sender', 'pw')
+    client.get(f'/chat/start/{recipient.id}')
+
     convo = Conversation.query.first()
+    assert convo is not None
 
-    socketio_client = socketio.test_client(app, flask_test_client=client)
-    socketio_client.emit('send_message', {'room': str(convo.id), 'message': 'Message 1'})
-    socketio_client.emit('send_message', {'room': str(convo.id), 'message': 'Message 2'})
+    # Verify participant statuses
+    sender_participant = Participant.query.filter_by(user_id=sender.id, conversation_id=convo.id).first()
+    recipient_participant = Participant.query.filter_by(user_id=recipient.id, conversation_id=convo.id).first()
+    assert sender_participant.status == 'active'
+    assert recipient_participant.status == 'pending'
 
-    login(client, 'user2', 'pw')
-
+    # Log in as Recipient and check inbox
+    login(client, 'recipient', 'pw')
     response = client.get('/chat')
-    assert response.status_code == 200
-    assert b'<span class="unread-dot"></span>' in response.data
+    assert b'Requests (1)' in response.data
+    assert b'Sender User' in response.data # Check for full name, not username
 
-    response = client.get('/home')
-    assert b'<span class="unread-badge">2</span>' in response.data
+    # Recipient views the message thread and sees the request actions
+    response = client.get(f'/chat/{convo.id}')
+    # The message thread for a pending chat should show the actions
+    assert b'Accept' in response.data
+    assert b'Delete' in response.data
+    assert b'Block' in response.data
 
-    client.get(f'/chat/{convo.id}')
+    # Recipient accepts the chat
+    response = client.get(f'/chat/accept/{convo.id}', follow_redirects=True)
+    assert b'Chat request accepted.' in response.data
 
-    response = client.get('/home')
-    assert b'unread-badge' not in response.data
+    # Verify participant status is now active by refreshing the object
+    db.session.refresh(recipient_participant)
+    assert recipient_participant.status == 'active'
+
+    # Check that the chat is now in the main inbox, not requests
+    response = client.get('/chat')
+    assert b'Requests (' not in response.data # The "Requests" tab shouldn't show a count
+    assert b'Sender User' in response.data
