@@ -122,3 +122,42 @@ def test_message_request_flow(client):
     response = client.get('/chat')
     assert b'Requests (' not in response.data # The "Requests" tab shouldn't show a count
     assert b'Sender User' in response.data
+
+def test_chat_actions(client):
+    """Test pinning, muting, and archiving a chat."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+
+    # Create a conversation
+    convo = Conversation()
+    p1 = Participant(user=user1, conversation=convo, status='active')
+    p2 = Participant(user=user2, conversation=convo, status='active')
+    db.session.add_all([convo, p1, p2])
+    db.session.commit()
+
+    login(client, 'user1', 'pw')
+
+    # Test Pinning
+    participant = Participant.query.filter_by(user_id=user1.id, conversation_id=convo.id).first()
+    assert participant.is_pinned == False
+    client.post(f'/chat/conversation/{convo.id}/pin')
+    db.session.refresh(participant)
+    assert participant.is_pinned == True
+    client.post(f'/chat/conversation/{convo.id}/pin') # Toggle off
+    db.session.refresh(participant)
+    assert participant.is_pinned == False
+
+    # Test Muting
+    assert participant.is_muted == False
+    client.post(f'/chat/conversation/{convo.id}/mute')
+    db.session.refresh(participant)
+    assert participant.is_muted == True
+    client.post(f'/chat/conversation/{convo.id}/mute') # Toggle off
+    db.session.refresh(participant)
+    assert participant.is_muted == False
+
+    # Test Archiving
+    assert participant.status == 'active'
+    client.post(f'/chat/conversation/{convo.id}/archive')
+    db.session.refresh(participant)
+    assert participant.status == 'archived'
