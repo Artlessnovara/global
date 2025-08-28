@@ -198,8 +198,10 @@ class Participant(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
     last_read_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    status = db.Column(db.String(20), default='active', nullable=False)
+    status = db.Column(db.String(20), default='active', nullable=False) # active, pending, blocked, archived
     last_seen_message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=True)
+    is_pinned = db.Column(db.Boolean, default=False, nullable=False)
+    is_muted = db.Column(db.Boolean, default=False, nullable=False)
     user = db.relationship('User', back_populates='conversations')
     conversation = db.relationship('Conversation', back_populates='participants')
 
@@ -734,18 +736,62 @@ def react_to_message(message_id):
         }, room=str(message.conversation.id))
         return {'status': 'added'}, 201
 
+def get_participant_or_404(conversation_id, user_id):
+    """Helper to get a participant entry or raise a 404."""
+    return Participant.query.filter_by(
+        conversation_id=conversation_id,
+        user_id=user_id
+    ).first_or_404()
+
+@app.route('/chat/conversation/<int:conversation_id>/pin', methods=['POST'])
+@login_required
+def pin_chat(conversation_id):
+    participant = get_participant_or_404(conversation_id, g.user.id)
+    participant.is_pinned = not participant.is_pinned
+    db.session.commit()
+    return {'status': 'success', 'is_pinned': participant.is_pinned}, 200
+
+@app.route('/chat/conversation/<int:conversation_id>/mute', methods=['POST'])
+@login_required
+def mute_chat(conversation_id):
+    participant = get_participant_or_404(conversation_id, g.user.id)
+    participant.is_muted = not participant.is_muted
+    db.session.commit()
+    return {'status': 'success', 'is_muted': participant.is_muted}, 200
+
+@app.route('/chat/conversation/<int:conversation_id>/archive', methods=['POST'])
+@login_required
+def archive_chat(conversation_id):
+    participant = get_participant_or_404(conversation_id, g.user.id)
+    participant.status = 'archived'
+    db.session.commit()
+    return {'status': 'success'}, 200
+
 @app.route('/chat')
 @login_required
 def chat_inbox():
-    user_participant_entries = Participant.query.filter_by(user_id=g.user.id).all()
-    active_chats = []
-    message_requests = []
-    for p_entry in user_participant_entries:
-        if p_entry.status == 'active':
-            active_chats.append(p_entry)
-        elif p_entry.status == 'pending':
-            message_requests.append(p_entry)
-    return render_template('chat_inbox.html', active_chats=active_chats, message_requests=message_requests, Message=Message)
+    user_participant_entries = Participant.query.filter_by(user_id=g.user.id).order_by(
+        Participant.is_pinned.desc(),
+    ).all()
+
+    active_chats = [p for p in user_participant_entries if p.status == 'active']
+    message_requests = [p for p in user_participant_entries if p.status == 'pending']
+    archived_chats = [p for p in user_participant_entries if p.status == 'archived']
+
+    # Further sort active chats by last message time (if available)
+    def get_last_message_time(p):
+        last_msg = p.conversation.messages.order_by(Message.created_at.desc()).first()
+        return last_msg.created_at if last_msg else p.conversation.created_at
+
+    active_chats.sort(key=lambda p: (not p.is_pinned, get_last_message_time(p)), reverse=True)
+
+    return render_template(
+        'chat_inbox.html',
+        active_chats=active_chats,
+        message_requests=message_requests,
+        archived_chats=archived_chats,
+        Message=Message
+    )
 
 @app.route('/reels')
 @login_required
