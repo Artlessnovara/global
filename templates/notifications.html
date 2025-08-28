@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications - GLOOBA{% endblock %}
+
+{% block content %}
+<div class="main-content">
+    <div class="settings-card">
+        <h1>Notifications</h1>
+
+        <div class="notification-list">
+            {% if notifications %}
+                {% for notification in notifications %}
+                    <div class="notification-item {% if not notification.is_read %}notification-unread{% endif %}">
+                        <div class="notification-avatar">
+                            {% if notification.sender %}
+                                <img src="https://i.pravatar.cc/150?u={{ notification.sender.username }}" alt="{{ notification.sender.username }}">
+                            {% else %}
+                                <img src="https://i.pravatar.cc/150?u=system" alt="System">
+                            {% endif %}
+                        </div>
+                        <div class="notification-text">
+                            {% if notification.type == 'like' %}
+                                <strong>{{ notification.sender.username }}</strong> liked your post.
+                            {% elif notification.type == 'follow' %}
+                                <strong>{{ notification.sender.username }}</strong> started following you.
+                            {% else %}
+                                A new notification.
+                            {% endif %}
+                            <span class="notification-time">{{ notification.created_at|humanize_time }}</span>
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p>You have no notifications yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

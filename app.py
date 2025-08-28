@@ -154,6 +154,19 @@ class Message(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     sender = db.relationship('User')
 
+class Notification(db.Model):
+    __tablename__ = 'notifications'
+    id = db.Column(db.Integer, primary_key=True)
+    recipient_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    sender_id = db.Column(db.Integer, db.ForeignKey('users.id')) # Can be null for system notifications
+    type = db.Column(db.String(50), nullable=False) # e.g., 'like', 'follow', 'comment'
+    related_id = db.Column(db.Integer) # e.g., post_id, user_id
+    is_read = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    recipient = db.relationship('User', foreign_keys=[recipient_id], backref='notifications')
+    sender = db.relationship('User', foreign_keys=[sender_id])
+
 # --- CLI COMMANDS ---
 @click.command('init-db')
 @with_appcontext
@@ -188,13 +201,21 @@ def load_logged_in_user():
 @app.context_processor
 def inject_unread_count():
     if g.user:
+        # Unread messages
         participant_entries = Participant.query.filter_by(user_id=g.user.id).all()
-        total_unread = 0
+        total_unread_messages = 0
         for p_entry in participant_entries:
             if p_entry.status == 'active':
-                total_unread += p_entry.conversation.unread_messages_for(g.user)
-        return dict(total_unread_messages=total_unread)
-    return dict(total_unread_messages=0)
+                total_unread_messages += p_entry.conversation.unread_messages_for(g.user)
+
+        # Unread notifications
+        total_unread_notifications = Notification.query.filter_by(recipient_id=g.user.id, is_read=False).count()
+
+        return dict(
+            total_unread_messages=total_unread_messages,
+            total_unread_notifications=total_unread_notifications
+        )
+    return dict(total_unread_messages=0, total_unread_notifications=0)
 
 def login_required(f):
     @wraps(f)
@@ -239,6 +260,13 @@ def follow(user_id):
     user_to_follow = db.get_or_404(User, user_id)
     if user_to_follow != g.user:
         g.user.follow(user_to_follow)
+        # Create a notification for the user who was followed
+        notification = Notification(
+            recipient_id=user_to_follow.id,
+            sender_id=g.user.id,
+            type='follow'
+        )
+        db.session.add(notification)
         db.session.commit()
         flash(f'You are now following {user_to_follow.username}.', 'success')
     return redirect(request.referrer or url_for('home'))
@@ -260,9 +288,19 @@ def react(post_id):
     existing_reaction = Reaction.query.filter_by(user_id=g.user.id, post_id=post.id).first()
     if existing_reaction:
         db.session.delete(existing_reaction)
+        # Optional: could add logic to delete the corresponding 'like' notification
     else:
         new_reaction = Reaction(user_id=g.user.id, post_id=post.id)
         db.session.add(new_reaction)
+        # Create a notification for the post author, but not if they are liking their own post
+        if post.author.id != g.user.id:
+            notification = Notification(
+                recipient_id=post.author.id,
+                sender_id=g.user.id,
+                type='like',
+                related_id=post.id
+            )
+            db.session.add(notification)
     db.session.commit()
     return redirect(request.referrer or url_for('home'))
 
@@ -548,6 +586,21 @@ def story_viewer(story_id):
     # Optional: Add logic to ensure only followers can view, or that it hasn't expired.
     # For now, we'll keep it simple.
     return render_template('story_viewer.html', story=story)
+
+@app.route('/notifications')
+@login_required
+def notifications():
+    """Display a list of notifications for the user."""
+    # Fetch notifications and order by most recent
+    user_notifications = Notification.query.filter_by(recipient_id=g.user.id).order_by(Notification.created_at.desc()).all()
+
+    # Mark all unread notifications as read
+    unread_ids = [n.id for n in user_notifications if not n.is_read]
+    if unread_ids:
+        Notification.query.filter(Notification.id.in_(unread_ids)).update({'is_read': True}, synchronize_session=False)
+        db.session.commit()
+
+    return render_template('notifications.html', notifications=user_notifications)
 
 # --- SOCKETIO EVENTS ---
 @socketio.on('send_message')
