@@ -168,6 +168,7 @@ class Participant(db.Model):
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
     last_read_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     status = db.Column(db.String(20), default='active', nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='member') # 'admin' or 'member'
     last_seen_message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=True)
     user = db.relationship('User', back_populates='conversations')
     conversation = db.relationship('Conversation', back_populates='participants')
@@ -185,6 +186,10 @@ class Conversation(db.Model):
     __tablename__ = 'conversations'
     id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    is_group = db.Column(db.Boolean, default=False, nullable=False)
+    name = db.Column(db.String(150), nullable=True)
+    description = db.Column(db.Text, nullable=True)
+    group_photo_path = db.Column(db.String(255), nullable=True)
     messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade="all, delete-orphan")
     participants = db.relationship('Participant', back_populates='conversation', cascade="all, delete-orphan")
 
@@ -623,6 +628,163 @@ def inject_datetime():
 def inject_models():
     return dict(Comment=Comment)
 
+@app.route('/chat/<int:conversation_id>/info')
+@login_required
+def chat_info(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    # Ensure user is a participant
+    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+    if not participant:
+        return "Not your conversation", 403
+
+    return render_template('chat_info.html', conversation=convo)
+
+@app.route('/chat/<int:conversation_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_group_chat(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+    if not participant or participant.role != 'admin':
+        flash('You do not have permission to edit this group.', 'error')
+        return redirect(url_for('chat_info', conversation_id=conversation_id))
+
+    if request.method == 'POST':
+        convo.name = request.form.get('group_name', convo.name)
+        convo.description = request.form.get('description', convo.description)
+
+        if 'group_photo' in request.files:
+            file = request.files['group_photo']
+            if file.filename != '':
+                # (Same file upload logic as in create_group)
+                filename = secure_filename(file.filename)
+                group_photos_dir = os.path.join(app.static_folder, 'group_photos')
+                os.makedirs(group_photos_dir, exist_ok=True)
+                unique_filename = f"group_{convo.id}_{int(datetime.now(timezone.utc).timestamp())}_{filename}"
+                file_path = os.path.join(group_photos_dir, unique_filename)
+                file.save(file_path)
+                convo.group_photo_path = os.path.join('group_photos', unique_filename)
+
+        db.session.commit()
+        flash('Group information updated successfully.', 'success')
+        return redirect(url_for('chat_info', conversation_id=conversation_id))
+
+    return render_template('edit_group.html', conversation=convo)
+
+@app.route('/chat/<int:conversation_id>/add_members', methods=['GET', 'POST'])
+@login_required
+def add_group_members(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+    if not participant or participant.role != 'admin':
+        flash('You do not have permission to add members to this group.', 'error')
+        return redirect(url_for('chat_info', conversation_id=conversation_id))
+
+    if request.method == 'POST':
+        member_ids_to_add = request.form.getlist('members')
+        for user_id in member_ids_to_add:
+            # Check if user is already a participant
+            is_already_participant = any(p.user_id == int(user_id) for p in convo.participants)
+            if not is_already_participant:
+                new_participant = Participant(user_id=int(user_id), conversation_id=convo.id, role='member')
+                db.session.add(new_participant)
+        db.session.commit()
+        flash('Members added successfully.', 'success')
+        return redirect(url_for('chat_info', conversation_id=conversation_id))
+
+    # For GET request, find users who are not already in the conversation
+    existing_member_ids = [p.user_id for p in convo.participants]
+    potential_members = User.query.filter(User.id.notin_(existing_member_ids)).all()
+
+    return render_template('add_members.html', conversation=convo, users=potential_members)
+
+@app.route('/chat/participant/<int:participant_id>/remove', methods=['POST'])
+@login_required
+def remove_group_member(participant_id):
+    participant_to_remove = db.get_or_404(Participant, participant_id)
+    convo = participant_to_remove.conversation
+    # Security check: ensure current user is an admin of this group
+    current_user_participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+    if not current_user_participant or current_user_participant.role != 'admin':
+        return {'error': 'Forbidden'}, 403
+
+    # Prevent removing the last admin
+    admins = [p for p in convo.participants if p.role == 'admin']
+    if len(admins) == 1 and participant_to_remove.role == 'admin':
+        flash('Cannot remove the last admin.', 'error')
+        return redirect(url_for('chat_info', conversation_id=convo.id))
+
+    db.session.delete(participant_to_remove)
+    db.session.commit()
+    flash('Member removed.', 'success')
+    return redirect(url_for('chat_info', conversation_id=convo.id))
+
+@app.route('/chat/participant/<int:participant_id>/promote', methods=['POST'])
+@login_required
+def promote_member(participant_id):
+    participant_to_promote = db.get_or_404(Participant, participant_id)
+    convo = participant_to_promote.conversation
+    current_user_participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+    if not current_user_participant or current_user_participant.role != 'admin':
+        return {'error': 'Forbidden'}, 403
+
+    participant_to_promote.role = 'admin'
+    db.session.commit()
+    flash('Member promoted to admin.', 'success')
+    return redirect(url_for('chat_info', conversation_id=convo.id))
+
+@app.route('/chat/participant/<int:participant_id>/demote', methods=['POST'])
+@login_required
+def demote_admin(participant_id):
+    participant_to_demote = db.get_or_404(Participant, participant_id)
+    convo = participant_to_demote.conversation
+    current_user_participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+    if not current_user_participant or current_user_participant.role != 'admin':
+        return {'error': 'Forbidden'}, 403
+
+    # Prevent demoting self if last admin
+    admins = [p for p in convo.participants if p.role == 'admin']
+    if len(admins) == 1 and participant_to_demote.user_id == g.user.id:
+        flash('You cannot demote yourself as the last admin.', 'error')
+        return redirect(url_for('chat_info', conversation_id=convo.id))
+
+    participant_to_demote.role = 'member'
+    db.session.commit()
+    flash('Admin demoted to member.', 'success')
+    return redirect(url_for('chat_info', conversation_id=convo.id))
+
+@app.route('/chat/conversation/<int:conversation_id>/leave', methods=['POST'])
+@login_required
+def leave_group(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    participant_to_leave = next((p for p in convo.participants if p.user_id == g.user.id), None)
+
+    if not participant_to_leave:
+        return {'error': 'Forbidden'}, 403
+
+    # If the user is the last admin, promote another member
+    admins = [p for p in convo.participants if p.role == 'admin']
+    if len(admins) == 1 and participant_to_leave.role == 'admin':
+        # Find the next longest-standing member to promote
+        other_members = [p for p in convo.participants if p.user_id != g.user.id]
+        if other_members:
+            # Sort by user creation date as a proxy for oldest member
+            other_members.sort(key=lambda p: p.user.created_at)
+            new_admin = other_members[0]
+            new_admin.role = 'admin'
+            flash(f'{new_admin.user.full_name} has been promoted to admin.', 'info')
+        else:
+            # This is the last member, so the group will be deleted
+            db.session.delete(convo)
+            db.session.commit()
+            flash('Group deleted as the last member left.', 'success')
+            return redirect(url_for('chat_inbox'))
+
+    db.session.delete(participant_to_leave)
+    db.session.commit()
+    flash('You have left the group.', 'success')
+    return redirect(url_for('chat_inbox'))
+
+
 @app.route('/chat/<int:conversation_id>')
 @login_required
 def message_thread(conversation_id):
@@ -640,6 +802,58 @@ def message_thread(conversation_id):
     other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
     other_participant = next((p for p in convo.participants if p.user_id != g.user.id), None)
     return render_template('message_thread.html', conversation=convo, messages=messages, other_user=other_user, other_participant=other_participant)
+
+@app.route('/chat/new')
+@login_required
+def new_chat():
+    users = User.query.filter(User.id != g.user.id).order_by(User.full_name).all()
+    return render_template('new_chat.html', users=users)
+
+@app.route('/chat/create_group', methods=['GET', 'POST'])
+@login_required
+def create_group():
+    if request.method == 'POST':
+        group_name = request.form.get('group_name')
+        member_ids = request.form.getlist('members')
+
+        if not group_name or not member_ids:
+            flash('Group name and members are required.', 'error')
+            return redirect(url_for('create_group'))
+
+        new_convo = Conversation(
+            name=group_name,
+            is_group=True
+        )
+
+        if 'group_photo' in request.files:
+            file = request.files['group_photo']
+            if file.filename != '':
+                filename = secure_filename(file.filename)
+                group_photos_dir = os.path.join(app.static_folder, 'group_photos')
+                os.makedirs(group_photos_dir, exist_ok=True)
+                unique_filename = f"group_{int(datetime.now(timezone.utc).timestamp())}_{filename}"
+                file_path = os.path.join(group_photos_dir, unique_filename)
+                file.save(file_path)
+                new_convo.group_photo_path = os.path.join('group_photos', unique_filename)
+
+        db.session.add(new_convo)
+        db.session.commit()
+
+        # Add creator as admin
+        admin_participant = Participant(user_id=g.user.id, conversation_id=new_convo.id, status='active', role='admin')
+        db.session.add(admin_participant)
+
+        # Add other members
+        for member_id in member_ids:
+            participant = Participant(user_id=int(member_id), conversation_id=new_convo.id, status='active', role='member')
+            db.session.add(participant)
+
+        db.session.commit()
+        flash('Group created successfully!', 'success')
+        return redirect(url_for('message_thread', conversation_id=new_convo.id))
+
+    users = User.query.filter(User.id != g.user.id).order_by(User.full_name).all()
+    return render_template('create_group.html', users=users)
 
 @app.route('/chat/start/<int:user_id>')
 @login_required

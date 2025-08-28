@@ -43,8 +43,13 @@
     <div class="thread-header">
         <a href="{{ url_for('chat_inbox') }}"><i class="fas fa-arrow-left"></i></a>
 
-        <a href="#" class="thread-header-main">
-            {% if other_user %}
+        <a href="{{ url_for('chat_info', conversation_id=conversation.id) if conversation.is_group else '#' }}" class="thread-header-main">
+            {% if conversation.is_group %}
+                <img src="{{ url_for('static', filename=conversation.group_photo_path) if conversation.group_photo_path else url_for('static', filename='img/default-avatar.png') }}" alt="{{ conversation.name }}'s photo" class="chat-avatar">
+                <div class="thread-header-info">
+                    <span>{{ conversation.name }}</span>
+                </div>
+            {% elif other_user %}
                 <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
                 <div class="thread-header-info">
                     <span>

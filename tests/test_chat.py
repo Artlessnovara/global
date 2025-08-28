@@ -283,3 +283,128 @@ def test_send_shared_post_message(client, app):
     assert b'shared-post-card' in response.data
     assert bytes(shared_post.text, 'utf-8') in response.data
     assert bytes(post_author.full_name, 'utf-8') in response.data
+
+def test_create_group_chat_and_verify_admin(client):
+    """Test that the creator of a group is made an admin."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+
+    login(client, 'user1', 'pw')
+
+    client.post('/chat/create_group', data={
+        'group_name': 'Admin Test Group',
+        'members': [user2.id]
+    }, follow_redirects=True)
+
+    group_convo = Conversation.query.filter_by(name='Admin Test Group').first()
+    assert group_convo is not None
+
+    creator_participant = Participant.query.filter_by(user_id=user1.id, conversation_id=group_convo.id).first()
+    assert creator_participant.role == 'admin'
+
+    other_participant = Participant.query.filter_by(user_id=user2.id, conversation_id=group_convo.id).first()
+    assert other_participant.role == 'member'
+
+def test_admin_can_edit_group_info(client):
+    """Test that an admin can edit group info."""
+    admin = register_user(username='admin', email='admin@test.com', password='pw')
+    convo = Conversation(is_group=True, name='Original Name')
+    p = Participant(user=admin, conversation=convo, role='admin')
+    db.session.add_all([convo, p])
+    db.session.commit()
+
+    login(client, 'admin', 'pw')
+    response = client.post(f'/chat/{convo.id}/edit', data={
+        'group_name': 'New Name',
+        'description': 'New Description'
+    }, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b'Group information updated successfully' in response.data
+    db.session.refresh(convo)
+    assert convo.name == 'New Name'
+    assert convo.description == 'New Description'
+
+def test_non_admin_cannot_edit_group_info(client):
+    """Test that a non-admin cannot edit group info."""
+    admin = register_user(username='admin', email='admin@test.com', password='pw')
+    member = register_user(username='member', email='member@test.com', password='pw')
+    convo = Conversation(is_group=True, name='Original Name')
+    p1 = Participant(user=admin, conversation=convo, role='admin')
+    p2 = Participant(user=member, conversation=convo, role='member')
+    db.session.add_all([convo, p1, p2])
+    db.session.commit()
+
+    login(client, 'member', 'pw')
+    response = client.post(f'/chat/{convo.id}/edit', data={'group_name': 'Attempted New Name'}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b'You do not have permission' in response.data
+    db.session.refresh(convo)
+    assert convo.name == 'Original Name'
+
+def test_admin_can_manage_members(client):
+    """Test that an admin can add, remove, promote, and demote members."""
+    admin = register_user(username='admin', email='admin@test.com', password='pw')
+    member1 = register_user(username='member1', email='m1@test.com', password='pw')
+    member2 = register_user(username='member2', email='m2@test.com', password='pw')
+    convo = Conversation(is_group=True, name='Management Test')
+    p_admin = Participant(user=admin, conversation=convo, role='admin')
+    p_member1 = Participant(user=member1, conversation=convo, role='member')
+    db.session.add_all([convo, p_admin, p_member1])
+    db.session.commit()
+
+    login(client, 'admin', 'pw')
+
+    # Add member2
+    client.post(f'/chat/{convo.id}/add_members', data={'members': [member2.id]})
+    p_member2 = Participant.query.filter_by(user_id=member2.id, conversation_id=convo.id).first()
+    assert p_member2 is not None
+
+    # Promote member1
+    client.post(f'/chat/participant/{p_member1.id}/promote')
+    db.session.refresh(p_member1)
+    assert p_member1.role == 'admin'
+
+    # Demote member1
+    client.post(f'/chat/participant/{p_member1.id}/demote')
+    db.session.refresh(p_member1)
+    assert p_member1.role == 'member'
+
+    # Remove member2
+    client.post(f'/chat/participant/{p_member2.id}/remove')
+    p_member2_after_remove = Participant.query.filter_by(user_id=member2.id, conversation_id=convo.id).first()
+    assert p_member2_after_remove is None
+
+def test_member_can_leave_group(client):
+    """Test that a member can leave a group."""
+    admin = register_user(username='admin', email='admin@test.com', password='pw')
+    member = register_user(username='member', email='member@test.com', password='pw')
+    convo = Conversation(is_group=True, name='Leave Test')
+    p_admin = Participant(user=admin, conversation=convo, role='admin')
+    p_member = Participant(user=member, conversation=convo, role='member')
+    db.session.add_all([convo, p_admin, p_member])
+    db.session.commit()
+
+    login(client, 'member', 'pw')
+    client.post(f'/chat/conversation/{convo.id}/leave')
+
+    p_member_after_leave = Participant.query.filter_by(user_id=member.id, conversation_id=convo.id).first()
+    assert p_member_after_leave is None
+    assert Conversation.query.get(convo.id) is not None # Group should still exist
+
+def test_last_admin_leaves_promotes_new_admin(client):
+    """Test that when the last admin leaves, another member is promoted."""
+    admin = register_user(username='admin', email='admin@test.com', password='pw')
+    member = register_user(username='member', email='member@test.com', password='pw')
+    convo = Conversation(is_group=True, name='Promotion Test')
+    p_admin = Participant(user=admin, conversation=convo, role='admin')
+    p_member = Participant(user=member, conversation=convo, role='member')
+    db.session.add_all([convo, p_admin, p_member])
+    db.session.commit()
+
+    login(client, 'admin', 'pw')
+    client.post(f'/chat/conversation/{convo.id}/leave')
+
+    db.session.refresh(p_member)
+    assert p_member.role == 'admin'
