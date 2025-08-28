@@ -5,31 +5,23 @@
 {% block content %}
 <div class="message-thread-container">
     <div class="thread-header">
-        {% if other_user %}
+    {% if conversation.is_group %}
+        <a href="{{ url_for('group_info', conversation_id=conversation.id) }}" class="thread-header-user">
+            <img src="{{ url_for('static', filename=conversation.group_photo_path or 'img/default_group.png') }}" alt="{{ conversation.name }}'s photo" class="chat-avatar">
+            <span>{{ conversation.name }}</span>
+        </a>
+    {% elif other_user %}
             <a href="{{ url_for('profile', username=other_user.username) }}" class="thread-header-user">
                 <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
                 <span>{{ other_user.full_name }}</span>
             </a>
-        {% else %}
-             <div class="thread-header-user">
-                <span>Group Chat</span>
-            </div>
         {% endif %}
     </div>
     <div class="message-list">
         {% for message in messages %}
-            <div class="message-bubble-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}" data-message-id="{{ message.id }}">
+            <div class="message-bubble-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}">
                 <div class="message-bubble">
                     <p>{{ message.body }}</p>
-                    <div class="message-actions">
-                        <button class="message-action-btn"><i class="fas fa-ellipsis-v"></i></button>
-                        <div class="message-actions-menu">
-                            <a href="#" class="delete-for-me">Delete for Me</a>
-                            {% if message.user_id == g.user.id %}
-                            <a href="#" class="delete-for-everyone">Delete for Everyone</a>
-                            {% endif %}
-                        </div>
-                    </div>
                 </div>
             </div>
         {% endfor %}
@@ -53,16 +45,6 @@
     </div>
     {% endif %}
 </div>
-
-<template id="message-actions-template">
-    <div class="message-actions">
-        <button class="message-action-btn"><i class="fas fa-ellipsis-v"></i></button>
-        <div class="message-actions-menu">
-            <a href="#" class="delete-for-me">Delete for Me</a>
-            <a href="#" class="delete-for-everyone" style="display: none;">Delete for Everyone</a>
-        </div>
-    </div>
-</template>
 {% endblock %}
 
 {% block scripts %}
@@ -72,14 +54,21 @@
         var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
         var conversationId = "{{ conversation.id }}";
 
+        // Join the conversation room
         socket.on('connect', function() {
             socket.emit('join', {room: conversationId});
         });
 
+        // Listen for new messages
         socket.on('new_message', function(msg) {
             const messageList = document.querySelector('.message-list');
             const currentUserId = {{ g.user.id }};
 
+            // Don't append the message if we sent it (it's already handled by the form submission logic)
+            // No, the form submission logic now just emits, it doesn't add to the DOM.
+            // So we need to render the message for everyone, including the sender.
+
+            // Create new message bubble
             const bubbleContainer = document.createElement('div');
             bubbleContainer.classList.add('message-bubble-container');
             if (msg.user_id === currentUserId) {
@@ -87,33 +76,20 @@
             } else {
                 bubbleContainer.classList.add('received');
             }
-            bubbleContainer.dataset.messageId = msg.id;
 
             const bubble = document.createElement('div');
             bubble.classList.add('message-bubble');
             const p = document.createElement('p');
             p.textContent = msg.body;
             bubble.appendChild(p);
-
-            const template = document.getElementById('message-actions-template');
-            const actions = template.content.cloneNode(true);
-            if (msg.user_id === currentUserId) {
-                actions.querySelector('.delete-for-everyone').style.display = 'block';
-            }
-            bubble.appendChild(actions);
-
             bubbleContainer.appendChild(bubble);
+
             messageList.appendChild(bubbleContainer);
+            // Scroll to the bottom
             messageList.scrollTop = messageList.scrollHeight;
         });
 
-        socket.on('message_deleted', function(data) {
-            const messageElement = document.querySelector(`.message-bubble-container[data-message-id='${data.message_id}']`);
-            if (messageElement) {
-                messageElement.remove();
-            }
-        });
-
+        // Handle form submission
         const form = document.querySelector('.message-composer form');
         form.addEventListener('submit', function(e) {
             e.preventDefault();
@@ -121,54 +97,13 @@
             let message = messageInput.value;
             if (message.trim() !== '') {
                 socket.emit('send_message', {room: conversationId, message: message});
-                messageInput.value = '';
+                messageInput.value = ''; // Clear input field
             }
         });
 
-        document.querySelector('.message-list').addEventListener('click', function(event) {
-            const actionButton = event.target.closest('.message-action-btn');
-            if (actionButton) {
-                const menu = actionButton.closest('.message-actions').querySelector('.message-actions-menu');
-                menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
-            }
-
-            const messageContainer = event.target.closest('.message-bubble-container');
-            if (!messageContainer) return;
-            const messageId = messageContainer.dataset.messageId;
-
-            if (event.target.classList.contains('delete-for-me')) {
-                event.preventDefault();
-                fetch(`/chat/message/${messageId}/delete_for_me`, { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        messageContainer.remove();
-                    }
-                });
-            }
-
-            if (event.target.classList.contains('delete-for-everyone')) {
-                event.preventDefault();
-                fetch(`/chat/message/${messageId}/delete`, { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    // The socket event will handle the removal
-                });
-            }
-        });
-
-        // Hide menu when clicking outside
-        document.addEventListener('click', function(event) {
-            document.querySelectorAll('.message-actions-menu').forEach(function(menu) {
-                if (!menu.parentElement.contains(event.target)) {
-                    menu.style.display = 'none';
-                }
-            });
-        });
-
-
+        // Scroll to the bottom of the message list on page load
         const messageList = document.querySelector('.message-list');
-        messageList.scrollTop = message-list.scrollHeight;
+        messageList.scrollTop = messageList.scrollHeight;
     });
 </script>
 {% endblock %}

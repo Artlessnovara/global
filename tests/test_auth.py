@@ -19,8 +19,6 @@ def register_user(username='testuser', email='test@example.com', password='passw
 
 def login(client, username, password):
     """Helper function to log in a user."""
-    # TODO: Investigate why the test client session persists between calls.
-    # For now, we log out any existing user to ensure a clean session for each test.
     logout(client)
     return client.post('/login', data={'username': username, 'password': password}, follow_redirects=True)
 

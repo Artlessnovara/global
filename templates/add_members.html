@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Add Members to {{ conversation.name }}{% endblock %}
+
+{% block content %}
+<div class="add-members-container">
+    <h1>Add Members to {{ conversation.name }}</h1>
+    <form action="{{ url_for('add_members', conversation_id=conversation.id) }}" method="POST">
+        <div class="user-selection-list">
+            {% for user in users %}
+            <div class="user-selection-item">
+                <input type="checkbox" name="users" value="{{ user.id }}" id="user-{{ user.id }}">
+                <label for="user-{{ user.id }}">
+                    <img src="https://i.pravatar.cc/150?u={{ user.username }}" alt="{{ user.username }}'s avatar">
+                    <span>{{ user.full_name }} (@{{ user.username }})</span>
+                </label>
+            </div>
+            {% else %}
+            <p>No users available to add.</p>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn-save-settings">Add Selected Members</button>
+    </form>
+</div>
+{% endblock %}
