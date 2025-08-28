@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Chat Info -
+    {% if conversation.is_group %}
+        {{ conversation.name }}
+    {% elif other_user %}
+        {{ other_user.full_name }}
+    {% endif %}
+{% endblock %}
+
+{% block head %}
+<style>
+    .chat-info-container { max-width: 600px; margin: 20px auto; padding: 20px; background-color: #fff; border: 1px solid #dbdbdb; border-radius: 3px; }
+    .chat-info-header { text-align: center; margin-bottom: 20px; }
+    .chat-info-avatar { width: 80px; height: 80px; border-radius: 50%; margin-bottom: 10px; }
+    .chat-info-name { font-size: 22px; font-weight: bold; }
+    .action-list { list-style: none; padding: 0; margin: 0; }
+    .action-list-item { padding: 15px; border-bottom: 1px solid #eee; }
+    .action-list-item a { text-decoration: none; color: #0095f6; font-weight: bold; }
+    .action-list-item.danger a { color: #ed4956; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="chat-info-container">
+    <div class="inbox-header" style="margin-bottom: 20px;">
+        <a href="{{ url_for('message_thread', conversation_id=conversation.id) }}"><i class="fas fa-arrow-left"></i></a>
+        <h2>Details</h2>
+        <span></span> <!-- Spacer -->
+    </div>
+
+    <div class="chat-info-header">
+        {% if conversation.is_group %}
+            <img src="{{ url_for('static', filename=conversation.group_photo_path) if conversation.group_photo_path else 'https://i.pravatar.cc/150?u=' + conversation.name }}" alt="{{ conversation.name }}'s photo" class="chat-info-avatar">
+            <div class="chat-info-name">{{ conversation.name }}</div>
+            <p>{{ conversation.participants|length }} members</p>
+        {% elif other_user %}
+            <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-info-avatar">
+            <div class="chat-info-name">{{ other_user.full_name }}</div>
+            <p>@{{ other_user.username }}</p>
+        {% endif %}
+    </div>
+
+    <ul class="action-list">
+        {% if not conversation.is_group and other_user %}
+            <li class="action-list-item"><a href="{{ url_for('profile', username=other_user.username) }}">View Profile</a></li>
+        {% endif %}
+        <li class="action-list-item"><a href="#">Mute Notifications</a></li>
+        <li class="action-list-item danger"><a href="#">Block</a></li>
+        <li class="action-list-item danger"><a href="#">Report</a></li>
+        <li class="action-list-item danger"><a href="#">Clear Chat</a></li>
+    </ul>
+</div>
+{% endblock %}
