@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Group Info
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <a href="{{ url_for('message_thread', conversation_id=conversation.id) }}"><i class="fas fa-arrow-left"></i></a>
+                    <h5 class="mb-0">Group Info</h5>
+                    <div>
+                        {% set current_participant = conversation.participants|selectattr('user_id', 'equalto', g.user.id)|first %}
+                        {% if current_participant and current_participant.role == 'admin' %}
+                            <a href="{{ url_for('edit_group_chat', conversation_id=conversation.id) }}" class="btn btn-light btn-sm">
+                                <i class="fas fa-pencil-alt"></i> Edit
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card-body text-center">
+                    <img src="{{ url_for('static', filename=conversation.group_photo_path) if conversation.group_photo_path else url_for('static', filename='img/default-avatar.png') }}"
+                         alt="{{ conversation.name }}" class="img-fluid rounded-circle mb-3" style="width: 150px; height: 150px; object-fit: cover;">
+                    <h4 class="card-title">{{ conversation.name }}</h4>
+                    <p class="text-muted">{{ conversation.description or 'No description provided.' }}</p>
+                </div>
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <strong>{{ conversation.participants|length }} Members</strong>
+                        {% if current_participant and current_participant.role == 'admin' %}
+                        <a href="{{ url_for('add_group_members', conversation_id=conversation.id) }}" class="btn btn-primary btn-sm">
+                            <i class="fas fa-user-plus"></i> Add
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% for p in conversation.participants | sort(attribute='role', reverse=True) %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center">
+                                <img src="{{ url_for('static', filename='img/default-avatar.png') }}" alt="{{ p.user.username }}" class="chat-avatar-sm me-3">
+                                <div>
+                                    <strong>{{ p.user.full_name }}</strong>
+                                    <div class="text-muted">@{{ p.user.username }}</div>
+                                </div>
+                            </div>
+                            <div>
+                                <span class="badge bg-secondary me-2">{{ p.role|capitalize }}</span>
+                                {% if current_participant and current_participant.role == 'admin' and p.user_id != g.user.id %}
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-light" type="button" id="dropdownMenuButton-{{ p.id }}" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <i class="fas fa-ellipsis-v"></i>
+                                    </button>
+                                    <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton-{{ p.id }}">
+                                        {% if p.role == 'member' %}
+                                        <li>
+                                            <form method="POST" action="{{ url_for('promote_member', participant_id=p.id) }}" class="d-inline">
+                                                <button type="submit" class="dropdown-item">Make Admin</button>
+                                            </form>
+                                        </li>
+                                        {% else %}
+                                        <li>
+                                            <form method="POST" action="{{ url_for('demote_admin', participant_id=p.id) }}" class="d-inline">
+                                                <button type="submit" class="dropdown-item">Remove as Admin</button>
+                                            </form>
+                                        </li>
+                                        {% endif %}
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li>
+                                            <form method="POST" action="{{ url_for('remove_group_member', participant_id=p.id) }}" class="d-inline">
+                                                <button type="submit" class="dropdown-item text-danger" onclick="return confirm('Are you sure you want to remove this member?')">Remove from group</button>
+                                            </form>
+                                        </li>
+                                    </ul>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+                <div class="card-footer text-center">
+                    <form method="POST" action="{{ url_for('leave_group', conversation_id=conversation.id) }}" class="d-inline">
+                        <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to leave this group?')">Leave Group</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
