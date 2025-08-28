@@ -1,5 +1,6 @@
 import pytest
 import io
+from datetime import datetime, timezone
 from tests.test_auth import register_user, login, logout
 from app import db, User, Conversation, Message, Participant, socketio, Post
 
@@ -283,6 +284,69 @@ def test_send_shared_post_message(client, app):
     assert b'shared-post-card' in response.data
     assert bytes(shared_post.text, 'utf-8') in response.data
     assert bytes(post_author.full_name, 'utf-8') in response.data
+
+def test_pin_message(client, app):
+    """Test that an admin can pin and unpin a message."""
+    admin = register_user(username='admin', email='admin@test.com', password='pw')
+    member = register_user(username='member', email='member@test.com', password='pw')
+    convo = Conversation(is_group=True)
+    p_admin = Participant(user=admin, conversation=convo, role='admin')
+    p_member = Participant(user=member, conversation=convo, role='member')
+    message = Message(conversation=convo, sender=member, body="A message to pin")
+    db.session.add_all([convo, p_admin, p_member, message])
+    db.session.commit()
+
+    # Test pinning by admin
+    login(client, 'admin', 'pw')
+    socketio_client = socketio.test_client(app, flask_test_client=client)
+    socketio_client.emit('join', {'room': str(convo.id)})
+
+    response = client.post(f'/chat/message/{message.id}/pin')
+    assert response.status_code == 200
+    assert response.json['is_pinned'] == True
+    db.session.refresh(message)
+    assert message.is_pinned == True
+
+    received = socketio_client.get_received()
+    assert received[0]['name'] == 'message_pin_status_changed'
+    assert received[0]['args'][0]['message_id'] == message.id
+    assert received[0]['args'][0]['is_pinned'] == True
+
+    # Test unpinning
+    client.post(f'/chat/message/{message.id}/pin')
+    db.session.refresh(message)
+    assert message.is_pinned == False
+
+    # Test non-admin cannot pin
+    logout(client)
+    login(client, 'member', 'pw')
+    response = client.post(f'/chat/message/{message.id}/pin')
+    assert response.status_code == 403
+
+def test_mute_conversation(client):
+    """Test muting a conversation for a specific duration."""
+    user = register_user(username='user', email='user@test.com', password='pw')
+    convo = Conversation()
+    participant = Participant(user=user, conversation=convo)
+    db.session.add_all([convo, participant])
+    db.session.commit()
+
+    login(client, 'user', 'pw')
+    response = client.post(f'/chat/conversation/{convo.id}/mute', json={'duration': '8h'})
+
+    assert response.status_code == 200
+    db.session.refresh(participant)
+    assert participant.muted_until is not None
+    muted_until_aware = participant.muted_until.replace(tzinfo=timezone.utc)
+    time_diff = muted_until_aware - datetime.now(timezone.utc)
+    assert time_diff.total_seconds() > 0
+    assert time_diff.total_seconds() <= 8 * 3600
+
+    # Test unmuting
+    response = client.post(f'/chat/conversation/{convo.id}/mute', json={'duration': 'unmute'})
+    assert response.status_code == 200
+    db.session.refresh(participant)
+    assert participant.muted_until is None
 
 def test_create_group_chat_and_verify_admin(client):
     """Test that the creator of a group is made an admin."""

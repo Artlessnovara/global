@@ -62,6 +62,25 @@
                 </div>
             {% endif %}
         </a>
+
+        <div class="thread-header-actions">
+            <div class="options-menu">
+                <button class="options-btn" onclick="toggleMenu()"><i class="fas fa-ellipsis-h"></i></button>
+                <ul class="options-dropdown" id="thread-options-menu">
+                    <li><a href="#" data-bs-toggle="modal" data-bs-target="#muteModal">Mute</a></li>
+                    <li><a href="#" class="danger">Block</a></li>
+                    <li><a href="#" class="danger">Report</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div id="pinned-message-banner" class="pinned-message-banner" style="display: none;">
+        <i class="fas fa-thumbtack"></i>
+        <div class="pinned-message-content">
+            <strong>Pinned Message</strong>
+            <p></p>
+        </div>
+        <button id="close-pinned-banner">&times;</button>
     </div>
     <div class="message-list" data-conversation-id="{{ conversation.id }}">
         {% set last_timestamp = [None] %}
@@ -77,7 +96,7 @@
                 </div>
             {% endif %}
 
-            <div class="message-bubble-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}" data-message-id="{{ message.id }}">
+            <div class="message-bubble-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}" data-message-id="{{ message.id }}" data-is-pinned="{{ message.is_pinned|string|lower }}">
                 {% if message.parent %}
                 <div class="parent-message-preview">
                     <strong>{{ message.parent.sender.full_name }}</strong>
@@ -103,7 +122,7 @@
                         </div>
                     {% endif %}
                     {% if message.body %}
-                        <p>{{ message.body }}</p>
+                        <p>{{ message.body | linkify_mentions | safe }}</p>
                     {% endif %}
                 </div>
                 <div class="message-meta">
@@ -187,13 +206,39 @@
     <ul>
         <li id="context-menu-react">React to message</li>
         <li id="context-menu-reply">Reply</li>
+        <li id="context-menu-pin" style="display: none;">Pin</li>
         <li id="context-menu-delete" class="danger-option" style="display: none;">Delete</li>
     </ul>
+</div>
+
+<!-- Mute Modal -->
+<div class="modal fade" id="muteModal" tabindex="-1" aria-labelledby="muteModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="muteModalLabel">Mute notifications</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>You will still be notified if you are mentioned.</p>
+        <div class="list-group">
+          <button type="button" class="list-group-item list-group-item-action mute-duration-btn" data-duration="8h">For 8 hours</button>
+          <button type="button" class="list-group-item list-group-item-action mute-duration-btn" data-duration="1d">For 1 day</button>
+          <button type="button" class="list-group-item list-group-item-action mute-duration-btn" data-duration="forever">Until I unmute</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script type="text/javascript">
+    function toggleMenu() {
+        const menu = document.getElementById('thread-options-menu');
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
     // --- SETUP ---
     const messageList = document.querySelector('.message-list');
@@ -277,8 +322,15 @@
                 </div>
             `;
         }
+        function linkifyMentionsJS(text) {
+            if (!text) return '';
+            const mentionPattern = /(?<!\S)@([a-zA-Z0-9_]+)/g;
+            return text.replace(mentionPattern, (match, username) => {
+                return `<a href="/profile/${username}">@${username}</a>`;
+            });
+        }
 
-        let bodyHTML = msg.body ? `<p>${msg.body}</p>` : '';
+        let bodyHTML = msg.body ? `<p>${linkifyMentionsJS(msg.body)}</p>` : '';
 
         bubbleContainer.innerHTML = `
             ${parentPreviewHTML}
@@ -311,6 +363,14 @@
 
     socket.on('reaction_added', data => updateReaction({ ...data, action: 'added' }));
     socket.on('reaction_removed', data => updateReaction({ ...data, action: 'removed' }));
+
+    socket.on('message_pin_status_changed', function(data) {
+        const messageContainer = document.querySelector(`.message-bubble-container[data-message-id='${data.message_id}']`);
+        if (messageContainer) {
+            messageContainer.dataset.isPinned = data.is_pinned;
+            updatePinnedMessageBanner();
+        }
+    });
 
     // --- DOM EVENT LISTENERS ---
     if (messageForm) {
@@ -373,6 +433,17 @@
                 deleteOption.style.display = 'none';
             }
 
+            // Show/hide pin option for admins
+            const pinOption = document.getElementById('context-menu-pin');
+            const currentUserIsAdmin = {{ participant.role == 'admin'|tojson if participant else 'false' }};
+            if (currentUserIsAdmin) {
+                pinOption.style.display = 'block';
+                const isPinned = currentMessageForContext.dataset.isPinned === 'true';
+                pinOption.textContent = isPinned ? 'Unpin' : 'Pin';
+            } else {
+                pinOption.style.display = 'none';
+            }
+
             contextMenu.style.top = `${e.pageY}px`;
             contextMenu.style.left = `${e.pageX}px`;
             contextMenu.style.display = 'block';
@@ -385,6 +456,14 @@
         }
         if (!e.target.closest('.message-bubble') && !e.target.closest('.reactions-popup')) {
             reactionsPopup.style.display = 'none';
+        }
+    });
+
+    document.getElementById('context-menu-pin').addEventListener('click', () => {
+        if (currentMessageForContext) {
+            const messageId = currentMessageForContext.dataset.messageId;
+            fetch(`/chat/message/${messageId}/pin`, { method: 'POST' });
+            contextMenu.style.display = 'none';
         }
     });
 
@@ -416,6 +495,31 @@
     document.getElementById('close-reply-preview').addEventListener('click', () => {
         document.getElementById('reply-preview').style.display = 'none';
         document.getElementById('reply-parent-id').value = '';
+    });
+
+    document.getElementById('close-pinned-banner').addEventListener('click', () => {
+        document.getElementById('pinned-message-banner').style.display = 'none';
+    });
+
+    document.querySelectorAll('.mute-duration-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const duration = this.dataset.duration;
+            fetch(`/chat/conversation/${conversationId}/mute`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ duration: duration })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const muteModal = bootstrap.Modal.getInstance(document.getElementById('muteModal'));
+                    muteModal.hide();
+                    // Optionally, show a success flash message dynamically
+                } else {
+                    alert('Error muting conversation: ' + data.error);
+                }
+            });
+        });
     });
 
     document.getElementById('context-menu-delete').addEventListener('click', () => {
@@ -505,8 +609,31 @@
     }, { root: null, threshold: 0.9 });
 
     // --- INITIALIZATION ---
+    function updatePinnedMessageBanner() {
+        const pinnedMessages = document.querySelectorAll('.message-bubble-container[data-is-pinned="true"]');
+        const banner = document.getElementById('pinned-message-banner');
+        const bannerText = banner.querySelector('p');
+
+        if (pinnedMessages.length > 0) {
+            // For simplicity, just show the first pinned message
+            const firstPinned = pinnedMessages[0];
+            bannerText.textContent = firstPinned.querySelector('.message-bubble p').textContent;
+            banner.style.display = 'flex';
+        } else {
+            banner.style.display = 'none';
+        }
+    }
+
+    document.querySelectorAll('.message-bubble-container').forEach(msg => {
+        if (msg.dataset.isPinned === 'true') {
+            // This is a bit redundant with the function above, but ensures initial state is captured
+        }
+        observer.observe(msg);
+    });
+
+    updatePinnedMessageBanner(); // Initial check on page load
+
     messageList.scrollTop = messageList.scrollHeight;
-    document.querySelectorAll('.message-bubble-container').forEach(msg => observer.observe(msg));
 });
 </script>
 {% endblock %}
