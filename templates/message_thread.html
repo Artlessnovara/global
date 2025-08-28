@@ -35,7 +35,6 @@
     .reactions-container { display: flex; gap: 2px; }
     .reaction-badge { background-color: #f0f0f0; border-radius: 10px; padding: 1px 5px; font-size: 0.8em; display: flex; align-items: center; }
     .reaction-badge .count { margin-left: 3px; font-weight: bold; }
-    .seen-indicator { font-size: 0.8em; color: #888; margin-left: 5px; }
 </style>
 {% endblock %}
 
@@ -44,13 +43,8 @@
     <div class="thread-header">
         <a href="{{ url_for('chat_inbox') }}"><i class="fas fa-arrow-left"></i></a>
 
-        <a href="{{ url_for('chat_info', conversation_id=conversation.id) }}" class="thread-header-main">
-            {% if conversation.is_group %}
-                <img src="{{ url_for('static', filename=conversation.group_photo_path) if conversation.group_photo_path else 'https://i.pravatar.cc/150?u=' + conversation.name }}" alt="{{ conversation.name }}'s photo" class="chat-avatar">
-                <div class="thread-header-info">
-                    <span>{{ conversation.name }}</span>
-                </div>
-            {% elif other_user %}
+        <a href="#" class="thread-header-main">
+            {% if other_user %}
                 <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
                 <div class="thread-header-info">
                     <span>
@@ -63,33 +57,29 @@
                 </div>
             {% endif %}
         </a>
-
-        <div class="thread-header-actions">
-            {% if not conversation.is_group and other_user %}
-                {% if g.user.is_following(other_user) %}
-                    <a href="{{ url_for('unfollow', user_id=other_user.id) }}" class="follow-btn following">Following</a>
-                {% else %}
-                    <a href="{{ url_for('follow', user_id=other_user.id) }}" class="follow-btn">Follow</a>
-                {% endif %}
-            {% endif %}
-            <div class="options-menu">
-                <button class="options-btn" onclick="toggleMenu()"><i class="fas fa-ellipsis-h"></i></button>
-                <ul class="options-dropdown" id="thread-options-menu">
-                    {% if not conversation.is_group and other_user %}
-                        <li><a href="{{ url_for('profile', username=other_user.username) }}">View Profile</a></li>
-                    {% endif %}
-                    <li><a href="#">Mute</a></li>
-                    <li><a href="#" class="danger">Block</a></li>
-                    <li><a href="#" class="danger">Report</a></li>
-                    <li><a href="{{ url_for('clear_chat', conversation_id=conversation.id) }}" class="danger" onclick="return confirm('Are you sure you want to clear this chat? This cannot be undone.')">Clear Chat</a></li>
-                </ul>
-            </div>
-        </div>
     </div>
     <div class="message-list" data-conversation-id="{{ conversation.id }}">
+        {% set last_timestamp = [None] %}
         {% for message in messages %}
+            {% set show_timestamp = [False] %}
+            {% if last_timestamp[0] is none or (message.created_at - last_timestamp[0]).total_seconds() > 900 %}
+                {% if show_timestamp.append(True) %}{% endif %}
+            {% endif %}
+
+            {% if show_timestamp[-1] %}
+                <div class="timestamp-divider">
+                    <span>{{ message.created_at | humanize_time }}</span>
+                </div>
+            {% endif %}
+
             <div class="message-bubble-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}" data-message-id="{{ message.id }}">
-                <div class="message-bubble">
+                {% if message.parent %}
+                <div class="parent-message-preview">
+                    <strong>{{ message.parent.sender.full_name }}</strong>
+                    <p>{{ message.parent.body }}</p>
+                </div>
+                {% endif %}
+                <div class="message-bubble" data-author-name="{{ message.sender.full_name }}">
                     <p>{{ message.body }}</p>
                 </div>
                 <div class="message-meta">
@@ -101,9 +91,20 @@
                             </div>
                         {% endfor %}
                     </div>
-                    <!-- Seen indicator will be added here by JS -->
+                    {% if message.user_id == g.user.id %}
+                        <span class="message-ticks">
+                            {% if other_participant and other_participant.last_seen_message_id and other_participant.last_seen_message_id >= message.id %}
+                                <i class="fas fa-check-double seen"></i>
+                            {% else %}
+                                <i class="fas fa-check"></i>
+                            {% endif %}
+                        </span>
+                    {% endif %}
                 </div>
             </div>
+            {# Update the timestamp for the next iteration #}
+            {% if last_timestamp.pop() %}{% endif %}
+            {% if last_timestamp.append(message.created_at) %}{% endif %}
         {% endfor %}
     </div>
     {% set participant = conversation.participants|selectattr('user_id', 'equalto', g.user.id)|first %}
@@ -118,8 +119,16 @@
     </div>
     {% else %}
     <div class="message-composer">
+        <div id="reply-preview" class="reply-preview" style="display: none;">
+            <div class="reply-preview-content">
+                <strong id="reply-preview-author"></strong>
+                <p id="reply-preview-text"></p>
+            </div>
+            <button id="close-reply-preview" class="close-reply-preview">&times;</button>
+        </div>
         <form method="post" action="javascript:void(0);">
-            <input type="text" name="body" placeholder="Type a message..." autocomplete="off" required>
+            <input type="hidden" id="reply-parent-id" name="parent_id" value="">
+            <textarea id="message-input" name="body" placeholder="Type a message..." rows="1" autocomplete="off" required></textarea>
             <button type="submit"><i class="fas fa-paper-plane"></i></button>
         </form>
     </div>
@@ -135,24 +144,19 @@
     <span>😢</span>
     <span>🙏</span>
 </div>
+
+<!-- Custom Message Context Menu -->
+<div id="message-context-menu" class="context-menu">
+    <ul>
+        <li id="context-menu-react">React to message</li>
+        <li id="context-menu-reply">Reply</li>
+    </ul>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
 <script type="text/javascript">
-    function toggleMenu() {
-        const menu = document.getElementById('thread-options-menu');
-        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
-    }
-
-    document.addEventListener('click', function(e) {
-        const menu = document.getElementById('thread-options-menu');
-        const btn = document.querySelector('.options-btn');
-        if (menu && btn && !btn.contains(e.target) && !menu.contains(e.target)) {
-            menu.style.display = 'none';
-        }
-    });
-
     document.addEventListener('DOMContentLoaded', function() {
     // --- SETUP ---
     var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
@@ -161,27 +165,13 @@
     const otherUserId = {{ other_user.id if other_user else 'null' }};
     const currentUserId = {{ g.user.id }};
     const lastSeenIdByOther = {{ other_participant.last_seen_message_id if other_participant and other_participant.last_seen_message_id else 'null' }};
-    const messageInput = document.querySelector('input[name="body"]');
+    const messageInput = document.getElementById('message-input');
     const messageForm = document.querySelector('.message-composer form');
     const typingIndicator = document.querySelector('.typing-indicator');
     const reactionsPopup = document.getElementById('reactions-popup');
     let currentMessageIdForReaction = null;
 
     // --- HELPER FUNCTIONS ---
-    function addSeenIndicator(messageId) {
-        document.querySelectorAll('.seen-indicator').forEach(el => el.remove());
-        const messageContainer = document.querySelector(`.message-bubble-container[data-message-id='${messageId}']`);
-        if (messageContainer && messageContainer.classList.contains('sent')) {
-            const metaContainer = messageContainer.querySelector('.message-meta');
-            if (metaContainer && !metaContainer.querySelector('.seen-indicator')) {
-                const seenIndicator = document.createElement('small');
-                seenIndicator.className = 'seen-indicator';
-                seenIndicator.textContent = 'Seen';
-                metaContainer.appendChild(seenIndicator);
-            }
-        }
-    }
-
     function updateReaction(data) {
         const messageContainer = document.querySelector(`.message-bubble-container[data-message-id='${data.message_id}']`);
         if (!messageContainer) return;
@@ -215,11 +205,24 @@
     socket.on('new_message', msg => {
         if (msg.user_id === otherUserId && typingIndicator) typingIndicator.style.display = 'none';
 
+        let parentPreviewHTML = '';
+        if (msg.parent) {
+            parentPreviewHTML = `
+                <div class="parent-message-preview">
+                    <strong>${msg.parent.author_name}</strong>
+                    <p>${msg.parent.body}</p>
+                </div>
+            `;
+        }
+
         const bubbleContainer = document.createElement('div');
         bubbleContainer.className = `message-bubble-container ${msg.user_id === currentUserId ? 'sent' : 'received'}`;
         bubbleContainer.dataset.messageId = msg.id;
         bubbleContainer.innerHTML = `
-            <div class="message-bubble"><p>${msg.body}</p></div>
+            ${parentPreviewHTML}
+            <div class="message-bubble" data-author-name="${msg.author_name}">
+                <p>${msg.body}</p>
+            </div>
             <div class="message-meta"><div class="reactions-container"></div></div>
         `;
 
@@ -230,7 +233,19 @@
 
     socket.on('user_typing', data => { if (data.user_id === otherUserId && typingIndicator) typingIndicator.style.display = 'inline'; });
     socket.on('user_stopped_typing', data => { if (data.user_id === otherUserId && typingIndicator) typingIndicator.style.display = 'none'; });
-    socket.on('message_was_seen', data => { if (data.user_id === otherUserId) addSeenIndicator(data.message_id); });
+
+    socket.on('message_was_seen', data => {
+        if (data.user_id === otherUserId) {
+             const messageContainer = document.querySelector(`.message-bubble-container[data-message-id='${data.message_id}']`);
+             if(messageContainer){
+                const ticks = messageContainer.querySelector('.message-ticks');
+                if(ticks){
+                    ticks.innerHTML = '<i class="fas fa-check-double seen"></i>';
+                }
+             }
+        }
+    });
+
     socket.on('reaction_added', data => updateReaction({ ...data, action: 'added' }));
     socket.on('reaction_removed', data => updateReaction({ ...data, action: 'removed' }));
 
@@ -239,34 +254,97 @@
         messageForm.addEventListener('submit', e => {
             e.preventDefault();
             let message = messageInput.value;
+            let parentId = document.getElementById('reply-parent-id').value;
             if (message.trim()) {
                 clearTimeout(typingTimer);
                 socket.emit('typing_stop', {room: conversationId});
-                socket.emit('send_message', {room: conversationId, message: message});
+                socket.emit('send_message', {
+                    room: conversationId,
+                    message: message,
+                    parent_id: parentId || null
+                });
                 messageInput.value = '';
+                document.getElementById('reply-preview').style.display = 'none';
+                document.getElementById('reply-parent-id').value = '';
+                messageInput.style.height = 'auto';
             }
         });
     }
 
     let typingTimer;
     if (messageInput) {
-        messageInput.addEventListener('input', () => {
+        messageInput.addEventListener('input', function() {
+            // Auto-resize logic
+            this.style.height = 'auto';
+            let scrollHeight = this.scrollHeight;
+            const maxHeight = 120; // Max height for ~6 lines
+            if (scrollHeight > maxHeight) {
+                this.style.height = maxHeight + 'px';
+                this.style.overflowY = 'auto';
+            } else {
+                this.style.height = scrollHeight + 'px';
+                this.style.overflowY = 'hidden';
+            }
+
+            // Typing indicator logic
             clearTimeout(typingTimer);
             socket.emit('typing_start', {room: conversationId});
             typingTimer = setTimeout(() => socket.emit('typing_stop', {room: conversationId}), 1500);
         });
     }
 
-    messageList.addEventListener('click', e => {
+    const contextMenu = document.getElementById('message-context-menu');
+    let currentMessageForContext = null;
+
+    messageList.addEventListener('contextmenu', e => {
         const bubble = e.target.closest('.message-bubble');
         if (bubble) {
-            const container = bubble.closest('.message-bubble-container');
-            currentMessageIdForReaction = container.dataset.messageId;
-            reactionsPopup.style.display = 'block';
-            container.appendChild(reactionsPopup);
-        } else if (!e.target.closest('.reactions-popup')) {
+            e.preventDefault();
+            currentMessageForContext = bubble.closest('.message-bubble-container');
+
+            contextMenu.style.top = `${e.pageY}px`;
+            contextMenu.style.left = `${e.pageX}px`;
+            contextMenu.style.display = 'block';
+        }
+    });
+
+    document.addEventListener('click', e => {
+        if (!e.target.closest('.context-menu')) {
+            contextMenu.style.display = 'none';
+        }
+        if (!e.target.closest('.message-bubble') && !e.target.closest('.reactions-popup')) {
             reactionsPopup.style.display = 'none';
         }
+    });
+
+    document.getElementById('context-menu-react').addEventListener('click', () => {
+        if (currentMessageForContext) {
+            currentMessageIdForReaction = currentMessageForContext.dataset.messageId;
+            reactionsPopup.style.display = 'block';
+            currentMessageForContext.appendChild(reactionsPopup);
+            contextMenu.style.display = 'none';
+        }
+    });
+
+    document.getElementById('context-menu-reply').addEventListener('click', () => {
+        if (currentMessageForContext) {
+            const parentId = currentMessageForContext.dataset.messageId;
+            const parentAuthor = currentMessageForContext.querySelector('.message-bubble').dataset.authorName;
+            const parentText = currentMessageForContext.querySelector('.message-bubble p').textContent;
+
+            document.getElementById('reply-parent-id').value = parentId;
+            document.getElementById('reply-preview-author').textContent = `Replying to ${parentAuthor}`;
+            document.getElementById('reply-preview-text').textContent = parentText;
+            document.getElementById('reply-preview').style.display = 'flex';
+
+            messageInput.focus();
+            contextMenu.style.display = 'none';
+        }
+    });
+
+    document.getElementById('close-reply-preview').addEventListener('click', () => {
+        document.getElementById('reply-preview').style.display = 'none';
+        document.getElementById('reply-parent-id').value = '';
     });
 
     reactionsPopup.addEventListener('click', e => {
@@ -293,7 +371,6 @@
     // --- INITIALIZATION ---
     messageList.scrollTop = messageList.scrollHeight;
     document.querySelectorAll('.message-bubble-container').forEach(msg => observer.observe(msg));
-    if (lastSeenIdByOther) addSeenIndicator(lastSeenIdByOther);
 });
 </script>
 {% endblock %}

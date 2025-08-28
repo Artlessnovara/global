@@ -123,93 +123,44 @@ def test_message_request_flow(client):
     assert b'Requests (' not in response.data # The "Requests" tab shouldn't show a count
     assert b'Sender User' in response.data
 
-def test_chat_actions(client):
-    """Test pinning, muting, and archiving a chat."""
-    user1 = register_user(username='user1', email='user1@test.com', password='pw')
-    user2 = register_user(username='user2', email='user2@test.com', password='pw')
-
-    # Create a conversation
-    convo = Conversation()
-    p1 = Participant(user=user1, conversation=convo, status='active')
-    p2 = Participant(user=user2, conversation=convo, status='active')
-    db.session.add_all([convo, p1, p2])
-    db.session.commit()
-
-    login(client, 'user1', 'pw')
-
-    # Test Pinning
-    participant = Participant.query.filter_by(user_id=user1.id, conversation_id=convo.id).first()
-    assert participant.is_pinned == False
-    client.post(f'/chat/conversation/{convo.id}/pin')
-    db.session.refresh(participant)
-    assert participant.is_pinned == True
-    client.post(f'/chat/conversation/{convo.id}/pin') # Toggle off
-    db.session.refresh(participant)
-    assert participant.is_pinned == False
-
-    # Test Muting
-    assert participant.is_muted == False
-    client.post(f'/chat/conversation/{convo.id}/mute')
-    db.session.refresh(participant)
-    assert participant.is_muted == True
-    client.post(f'/chat/conversation/{convo.id}/mute') # Toggle off
-    db.session.refresh(participant)
-    assert participant.is_muted == False
-
-    # Test Archiving
-    assert participant.status == 'active'
-    client.post(f'/chat/conversation/{convo.id}/archive')
-    db.session.refresh(participant)
-    assert participant.status == 'archived'
-
-def test_create_group_chat(client):
-    """Test the successful creation of a group chat."""
-    user1 = register_user(username='user1', email='user1@test.com', password='pw')
-    user2 = register_user(username='user2', email='user2@test.com', password='pw')
-    user3 = register_user(username='user3', email='user3@test.com', password='pw')
-
-    login(client, 'user1', 'pw')
-
-    response = client.post('/chat/create_group', data={
-        'group_name': 'Test Group',
-        'members': [user2.id, user3.id]
-    }, follow_redirects=True)
-
-    assert response.status_code == 200
-    assert b'Group created successfully!' in response.data
-
-    # Verify the conversation was created correctly
-    group_convo = Conversation.query.filter_by(name='Test Group').first()
-    assert group_convo is not None
-    assert group_convo.is_group == True
-
-    # Verify all participants were added
-    participants = group_convo.participants
-    assert len(participants) == 3
-    participant_ids = [p.user_id for p in participants]
-    assert user1.id in participant_ids
-    assert user2.id in participant_ids
-    assert user3.id in participant_ids
-
-def test_clear_chat(client):
-    """Test that the clear chat function deletes messages but not the conversation."""
+def test_send_and_receive_reply_message(client, app):
+    """Test sending a message that is a reply to another message."""
     user1 = register_user(username='user1', email='user1@test.com', password='pw')
     user2 = register_user(username='user2', email='user2@test.com', password='pw')
     convo = Conversation()
     p1 = Participant(user=user1, conversation=convo)
     p2 = Participant(user=user2, conversation=convo)
-    msg1 = Message(conversation=convo, sender=user1, body="Message 1")
-    msg2 = Message(conversation=convo, sender=user2, body="Message 2")
-    db.session.add_all([convo, p1, p2, msg1, msg2])
+    parent_message = Message(conversation=convo, sender=user1, body="This is the message to be replied to.")
+    db.session.add_all([convo, p1, p2, parent_message])
     db.session.commit()
 
-    assert Message.query.count() == 2
+    # User 2 replies to User 1's message
+    login(client, 'user2', 'pw')
+    socketio_client = socketio.test_client(app, flask_test_client=client)
+    socketio_client.emit('join', {'room': str(convo.id)})
+    socketio_client.emit('send_message', {
+        'room': str(convo.id),
+        'message': 'This is a reply.',
+        'parent_id': parent_message.id
+    })
 
-    login(client, 'user1', 'pw')
-    response = client.post(f'/chat/conversation/{convo.id}/clear', follow_redirects=True)
+    # Check the socket response
+    received = socketio_client.get_received()
+    assert received[0]['name'] == 'new_message'
+    reply_data = received[0]['args'][0]
+    assert reply_data['body'] == 'This is a reply.'
+    assert reply_data['parent'] is not None
+    assert reply_data['parent']['body'] == parent_message.body
+    assert reply_data['parent']['author_name'] == user1.full_name
 
+    # Check the database
+    reply_message = Message.query.filter_by(body='This is a reply.').first()
+    assert reply_message is not None
+    assert reply_message.parent_id == parent_message.id
+
+    # Check the rendered HTML
+    response = client.get(f'/chat/{convo.id}')
     assert response.status_code == 200
-    assert b'Chat history has been cleared.' in response.data
-    assert Message.query.count() == 0
-    assert Conversation.query.count() == 1 # Conversation should still exist
-    assert Participant.query.count() == 2 # Participants should still exist
+    assert b'parent-message-preview' in response.data
+    assert bytes(parent_message.body, 'utf-8') in response.data
+    assert bytes(user1.full_name, 'utf-8') in response.data

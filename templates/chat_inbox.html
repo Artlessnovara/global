@@ -1,113 +1,51 @@
 {% extends "base.html" %}
 
-{% block title %}Messages - GLOOBA{% endblock %}
-
-{% block head %}
-<style>
-    .chat-inbox-container { max-width: 600px; margin: 20px auto; }
-    .inbox-header { display: flex; justify-content: space-between; align-items: center; padding: 0 15px; }
-    .inbox-header h2 { font-size: 24px; }
-    .new-message-btn { font-size: 24px; color: #333; text-decoration: none; }
-    .search-bar { padding: 10px 15px; }
-    .search-bar input { width: 100%; padding: 10px; border: 1px solid #dbdbdb; border-radius: 8px; }
-    .profile-nav-tabs { border-bottom: 1px solid #dbdbdb; }
-    .chat-list-item { display: flex; align-items: center; padding: 10px 15px; text-decoration: none; color: inherit; border-bottom: 1px solid #f0f0f0; }
-    .chat-list-item:hover { background-color: #f9f9f9; }
-    .chat-list-item-main { flex-grow: 1; display: flex; align-items: center; }
-    .chat-avatar { width: 50px; height: 50px; border-radius: 50%; margin-right: 15px; }
-    .chat-item-details { flex-grow: 1; }
-    .chat-item-name { font-weight: bold; }
-    .chat-item-preview { color: #8e8e8e; font-size: 14px; }
-    .chat-item-meta { text-align: right; font-size: 12px; color: #8e8e8e; }
-    .unread-dot { background-color: #0095f6; border-radius: 50%; width: 8px; height: 8px; margin-left: 5px; }
-    .pinned-icon { color: #ffc107; margin-right: 5px; }
-    .chat-item-actions { display: flex; gap: 5px; }
-    .action-btn { background: #eee; border: none; padding: 8px; border-radius: 5px; cursor: pointer; }
-    .action-btn:hover { background: #ddd; }
-</style>
-{% endblock %}
+{% block title %}Inbox - GLOOBA{% endblock %}
 
 {% block content %}
 <div class="chat-inbox-container">
     <div class="inbox-header">
-        <h2>Messages</h2>
-        <a href="{{ url_for('new_chat') }}" class="new-message-btn"><i class="fas fa-edit"></i></a>
-    </div>
-
-    <div class="search-bar">
-        <input type="search" placeholder="Search...">
+        <h2>Inbox</h2>
+        <a href="#" class="new-message-btn"><i class="fas fa-edit"></i></a>
     </div>
 
     <div class="profile-nav-tabs">
         <button class="tab-link active" onclick="openTab(event, 'recent')">Recent</button>
-        <button class="tab-link" onclick="openTab(event, 'requests')">Requests {% if message_requests|length > 0 %}({{ message_requests|length }}){% endif %}</button>
-        <button class="tab-link" onclick="openTab(event, 'archived')">Archived</button>
+    <button class="tab-link" onclick="openTab(event, 'requests')">Requests {% if message_requests|length > 0 %}({{ message_requests|length }}){% endif %}</button>
     </div>
 
     <div id="recent" class="tab-content" style="display: block;">
         <div class="chat-list">
-            {% for p_entry in active_chats %}
-                {% set convo = p_entry.conversation %}
-                <div class="chat-list-item" data-conversation-id="{{ convo.id }}">
-                    <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-list-item-main">
-                        {% if convo.is_group %}
-                            <img src="{{ url_for('static', filename=convo.group_photo_path) if convo.group_photo_path else 'https://i.pravatar.cc/150?u=' + convo.name }}" alt="{{ convo.name }}'s photo" class="chat-avatar">
+            {% if active_chats %}
+                {% for p_entry in active_chats %}
+                    {% set convo = p_entry.conversation %}
+                    <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-list-item">
+                        {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
+                        {% if other_participant %}
+                            {% set other_user = other_participant.user %}
+                            <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
                             <div class="chat-item-details">
-                                <span class="chat-item-name">
-                                    {% if p_entry.is_pinned %}<i class="fas fa-thumbtack pinned-icon"></i>{% endif %}
-                                    {{ convo.name }}
-                                </span>
-                                <div class="chat-item-preview">
-                                    {% set last_msg = convo.messages.order_by(Message.created_at.desc()).first() %}
-                                    {% if last_msg %}
-                                        {{ last_msg.body[:30] }}{% if last_msg.body|length > 30 %}...{% endif %}
+                                <span class="chat-item-name">{{ other_user.full_name }}</span>
+                                <span class="chat-item-preview">
+                                    {% if convo.messages.order_by(Message.created_at.desc()).first() %}
+                                        {{ convo.messages.order_by(Message.created_at.desc()).first().body[:30] }}...
                                     {% else %}
                                         No messages yet.
                                     {% endif %}
-                                </div>
+                                </span>
                             </div>
-                        {% else %}
-                            {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
-                            {% if other_participant %}
-                                {% set other_user = other_participant.user %}
-                                <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
-                                <div class="chat-item-details">
-                                    <span class="chat-item-name">
-                                        {% if p_entry.is_pinned %}<i class="fas fa-thumbtack pinned-icon"></i>{% endif %}
-                                        {{ other_user.full_name }}
-                                    </span>
-                                    <div class="chat-item-preview">
-                                        {% set last_msg = convo.messages.order_by(Message.created_at.desc()).first() %}
-                                        {% if last_msg %}
-                                            {{ last_msg.body[:30] }}{% if last_msg.body|length > 30 %}...{% endif %}
-                                        {% else %}
-                                            No messages yet.
-                                        {% endif %}
-                                    </div>
-                                </div>
+                            {% set unread_count = convo.unread_messages_for(g.user) %}
+                            {% if unread_count > 0 %}
+                                <span class="unread-dot"></span>
                             {% endif %}
                         {% endif %}
-                        <div class="chat-item-meta">
-                            {% set last_msg = convo.messages.order_by(Message.created_at.desc()).first() %}
-                            {% if last_msg %}
-                                <span>{{ last_msg.created_at|humanize_time }}</span>
-                            {% endif %}
-                            {% if convo.unread_messages_for(g.user) > 0 %}
-                                <div class="unread-dot"></div>
-                            {% endif %}
-                        </div>
                     </a>
-                    <div class="chat-item-actions">
-                        <button class="action-btn btn-archive" title="Archive"><i class="fas fa-archive"></i></button>
-                        <button class="action-btn btn-mute" title="Mute"><i class="fas fa-bell-slash"></i></button>
-                        <button class="action-btn btn-pin" title="Pin"><i class="fas fa-thumbtack"></i></button>
-                    </div>
-                </div>
+                {% endfor %}
             {% else %}
-                <div class="no-chats" style="padding: 20px; text-align: center;">
-                    <p>You have no active conversations.</p>
+                <div class="no-chats">
+                    <p>You have no conversations yet.</p>
                 </div>
-            {% endfor %}
+            {% endif %}
         </div>
     </div>
 
@@ -129,99 +67,11 @@
                     </a>
                 {% endfor %}
             {% else %}
-                <div class="no-chats" style="padding: 20px; text-align: center;">
+                <div class="no-chats">
                     <p>You have no message requests.</p>
                 </div>
             {% endif %}
         </div>
     </div>
-
-    <div id="archived" class="tab-content" style="display: none;">
-        <div class="chat-list">
-             {% for p_entry in archived_chats %}
-                {% set convo = p_entry.conversation %}
-                {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
-                {% if other_participant %}
-                    {% set other_user = other_participant.user %}
-                     <div class="chat-list-item">
-                        <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-list-item-main">
-                            <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
-                            <div class="chat-item-details">
-                                <span class="chat-item-name">{{ other_user.full_name }}</span>
-                            </div>
-                        </a>
-                    </div>
-                {% endif %}
-            {% else %}
-                <div class="no-chats" style="padding: 20px; text-align: center;">
-                    <p>You have no archived conversations.</p>
-                </div>
-            {% endfor %}
-        </div>
-    </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-{{ super() }}
-<script>
-    function openTab(evt, tabName) {
-        var i, tabcontent, tablinks;
-        tabcontent = document.getElementsByClassName("tab-content");
-        for (i = 0; i < tabcontent.length; i++) {
-            tabcontent[i].style.display = "none";
-        }
-        tablinks = document.getElementsByClassName("tab-link");
-        for (i = 0; i < tablinks.length; i++) {
-            tablinks[i].className = tablinks[i].className.replace(" active", "");
-        }
-        document.getElementById(tabName).style.display = "block";
-        evt.currentTarget.className += " active";
-    }
-
-    document.addEventListener('DOMContentLoaded', function() {
-        const chatList = document.querySelector('#recent .chat-list');
-
-        chatList.addEventListener('click', function(e) {
-            const button = e.target.closest('.action-btn');
-            if (!button) return;
-
-            const chatItem = button.closest('.chat-list-item');
-            const conversationId = chatItem.dataset.conversationId;
-            let action = '';
-
-            if (button.classList.contains('btn-pin')) action = 'pin';
-            if (button.classList.contains('btn-mute')) action = 'mute';
-            if (button.classList.contains('btn-archive')) action = 'archive';
-
-            if (!action) return;
-
-            fetch(`/chat/conversation/${conversationId}/${action}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    // --- Handle UI updates ---
-                    if (action === 'archive') {
-                        // Simple removal for now, full move would require more complex JS
-                        chatItem.remove();
-                        // Optionally, you could add it to the 'archived' list here
-                    } else if (action === 'pin') {
-                        // Reload the page to see the new sorted order
-                        // This is simpler than re-ordering the DOM manually
-                        window.location.reload();
-                    } else if (action === 'mute') {
-                        // You could toggle a visual indicator for mute status here
-                        button.classList.toggle('active'); // Example
-                    }
-                }
-            })
-            .catch(error => console.error('Error:', error));
-        });
-    });
-</script>
 {% endblock %}
