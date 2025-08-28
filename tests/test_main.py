@@ -209,8 +209,9 @@ def test_profile_page_new_layout(client):
     assert b'profile-stats-bar' in response.data
     # Check that post content is not there
     assert b'This post should not be on my profile.' not in response.data
-    # Check that the placeholder for posts is there
-    assert b'No posts yet.' in response.data
+    # Check that the new placeholders for empty media tabs are there
+    assert b'No videos yet.' in response.data
+    assert b'No photos yet.' in response.data
 
 def test_profile_info_section(client):
     """Test that the new 'Intro' section on the profile displays correctly."""

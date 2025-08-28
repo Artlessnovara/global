@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Create New Post - GLOOBA{% endblock %}
+
+{% block content %}
+<div class="main-content">
+    <div class="settings-card" style="text-align: center;">
+        <h1>Create a New Post</h1>
+        <p>What would you like to share?</p>
+
+        <div class="create-choice-container">
+            <a href="{{ url_for('create_media_post', media_type='photo') }}" class="choice-card">
+                <i class="fas fa-camera fa-3x"></i>
+                <h2>Upload Photo</h2>
+            </a>
+            <a href="{{ url_for('create_media_post', media_type='video') }}" class="choice-card">
+                <i class="fas fa-video fa-3x"></i>
+                <h2>Upload Video</h2>
+            </a>
+        </div>
+    </div>
+</div>
+
+<style>
+.create-choice-container {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    margin-top: 30px;
+}
+.choice-card {
+    width: 200px;
+    height: 200px;
+    border: 2px dashed #dbdbdb;
+    border-radius: 15px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-decoration: none;
+    color: #8e8e8e;
+    transition: all 0.2s ease-in-out;
+}
+.choice-card:hover {
+    border-color: #0095f6;
+    color: #0095f6;
+    background-color: #f0f8ff;
+}
+.choice-card h2 {
+    font-size: 18px;
+    margin-top: 15px;
+}
+</style>
+{% endblock %}

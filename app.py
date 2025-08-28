@@ -460,9 +460,64 @@ def create_post():
 def profile(username):
     user = User.query.filter_by(username=username).first_or_404()
     stats = {'posts': user.posts.count(), 'followers': user.followers.count(), 'following': user.followed.count()}
-    # Per new requirement, posts from the global feed do not appear on profiles.
-    posts = []
-    return render_template('profile.html', user=user, stats=stats, posts=posts)
+
+    # Fetch photo and video posts for the new tabbed view
+    photo_posts = user.posts.filter_by(content_type='photo').order_by(Post.created_at.desc()).all()
+    video_posts = user.posts.filter_by(content_type='video').order_by(Post.created_at.desc()).all()
+
+    return render_template('profile.html', user=user, stats=stats, photo_posts=photo_posts, video_posts=video_posts)
+
+@app.route('/create')
+@login_required
+def create_choice():
+    """Display the choice page for creating a new photo or video post."""
+    return render_template('create_choice.html')
+
+@app.route('/create/<media_type>', methods=['GET', 'POST'])
+@login_required
+def create_media_post(media_type):
+    if media_type not in ['photo', 'video']:
+        return "Invalid media type", 404
+
+    if request.method == 'POST':
+        if 'media_file' not in request.files:
+            flash('No file part', 'error')
+            return redirect(request.url)
+        file = request.files['media_file']
+        if file.filename == '':
+            flash('No selected file', 'error')
+            return redirect(request.url)
+
+        text_content = request.form.get('text_content', '')
+        mode = request.form.get('mode')
+        if not mode:
+            flash('A mode is required for all posts.', 'error')
+            return redirect(request.url)
+
+        if file:
+            filename = secure_filename(file.filename)
+            posts_dir = os.path.join(app.static_folder, 'posts')
+            os.makedirs(posts_dir, exist_ok=True)
+
+            unique_filename = f"{g.user.id}_{int(datetime.now(timezone.utc).timestamp())}_{filename}"
+            file_path = os.path.join(posts_dir, unique_filename)
+            file.save(file_path)
+
+            relative_path = os.path.join('posts', unique_filename)
+            new_post = Post(
+                user_id=g.user.id,
+                content_type=media_type,
+                content_path=relative_path,
+                text=text_content,
+                mode=mode
+            )
+            db.session.add(new_post)
+            db.session.commit()
+
+            flash(f'Your {media_type} has been posted!', 'success')
+            return redirect(url_for('profile', username=g.user.username))
+
+    return render_template('create_media_post.html', media_type=media_type)
 
 @app.route('/home')
 @login_required
