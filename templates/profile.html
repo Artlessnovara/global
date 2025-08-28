@@ -4,50 +4,41 @@
 
 {% block content %}
 <div class="profile-page">
-    <header class="profile-header">
+    <header class="new-profile-header">
         <div class="profile-cover-photo">
-            <!-- Placeholder for cover photo -->
             <img src="https://i.pravatar.cc/1000?u=cover-{{ user.username }}" alt="Cover Photo">
+            <!-- Add button for changing cover later -->
         </div>
-        <div class="profile-header-main">
+        <div class="profile-header-content">
             <div class="profile-picture-container">
                 <img src="https://i.pravatar.cc/150?u={{ user.username }}" alt="Profile Picture" class="profile-picture">
+                 <!-- Add button for changing profile pic later -->
             </div>
             <div class="profile-details">
                 <h2 class="display-name">{{ user.full_name }}</h2>
                 <p class="username">@{{ user.username }}</p>
-                <div class="profile-stats">
-                    <span><strong>{{ stats.posts }}</strong> posts</span>
-                    <span><strong>{{ stats.followers }}</strong> followers</span>
-                    <span><strong>{{ stats.following }}</strong> following</span>
-                </div>
+            </div>
+            <div class="profile-main-actions">
+                 {% if user != g.user %}
+                    {% if g.user.is_following(user) %}
+                        <a href="{{ url_for('unfollow', user_id=user.id) }}" class="btn-profile-action following">Following</a>
+                    {% else %}
+                        <a href="{{ url_for('follow', user_id=user.id) }}" class="btn-profile-action follow">Follow</a>
+                    {% endif %}
+                    <a href="{{ url_for('start_chat', user_id=user.id) }}" class="btn-profile-action">Message</a>
+                {% else %}
+                    <a href="#" class="btn-profile-action">Edit Profile</a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="profile-stats-bar">
+             <div class="profile-stats">
+                <span><strong>{{ stats.posts }}</strong> posts</span>
+                <span><strong>{{ stats.followers }}</strong> followers</span>
+                <span><strong>{{ stats.following }}</strong> following</span>
             </div>
         </div>
     </header>
-    <div class="profile-actions-bar">
-        <div class="action-buttons-left">
-            {% if user != g.user %}
-                {% if g.user.is_following(user) %}
-                    <a href="{{ url_for('unfollow', user_id=user.id) }}" class="btn-profile-action following">Following</a>
-                {% else %}
-                    <a href="{{ url_for('follow', user_id=user.id) }}" class="btn-profile-action follow">Follow</a>
-                {% endif %}
-                <a href="{{ url_for('start_chat', user_id=user.id) }}" class="btn-profile-action">Message</a>
-            {% else %}
-                <a href="#" class="btn-profile-action">Edit Profile</a>
-            {% endif %}
-        </div>
-        <div class="action-buttons-right">
-            {% if user != g.user %}
-                {% if g.user.is_close_friend(user) %}
-                    <a href="{{ url_for('remove_close_friend', user_id=user.id) }}" class="btn-profile-action"><i class="fas fa-star" style="color: #FFD700;"></i> Close Friend</a>
-                {% else %}
-                    <a href="{{ url_for('add_close_friend', user_id=user.id) }}" class="btn-profile-action"><i class="far fa-star"></i> Add to Close Friends</a>
-                {% endif %}
-            {% endif %}
-            <a href="#" class="btn-profile-action more-btn"><i class="fas fa-ellipsis-h"></i></a>
-        </div>
-    </div>
 
     <div class="profile-body">
         <div class="profile-sidebar">
@@ -63,7 +54,15 @@
                     {% if user.work_education %}
                         <li><i class="fas fa-briefcase"></i> Works at <strong>{{ user.work_education }}</strong></li>
                     {% endif %}
+                    {% if user.relationship_status %}
+                        <li><i class="fas fa-heart"></i> {{ user.relationship_status }}</li>
+                    {% endif %}
                 </ul>
+                 {% if user == g.user %}
+                    <a href="#" class="btn-profile-action" style="width: 100%; justify-content: center; margin-top: 10px;">Add More</a>
+                 {% else %}
+                     <a href="#" class="btn-profile-action" style="width: 100%; justify-content: center; margin-top: 10px;">See more about {{ user.full_name.split()[0] }}</a>
+                 {% endif %}
             </div>
         </div>
         <div class="profile-main-content">

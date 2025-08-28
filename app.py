@@ -61,6 +61,7 @@ class User(db.Model):
     bio = db.Column(db.Text, nullable=True)
     location = db.Column(db.String(100), nullable=True)
     work_education = db.Column(db.String(150), nullable=True)
+    relationship_status = db.Column(db.String(50), nullable=True)
     country = db.Column(db.String(100), nullable=True)
 
     posts = db.relationship('Post', backref='author', lazy='dynamic')

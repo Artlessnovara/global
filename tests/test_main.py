@@ -190,22 +190,42 @@ def test_story_viewer_loads(client):
     assert bytes(user1.username, 'utf-8') in response.data
     assert b'stories/test.jpg' in response.data
 
-def test_post_does_not_appear_on_profile(client):
-    """Test that a post created on the home feed does not appear on the user's profile."""
+def test_profile_page_new_layout(client):
+    """Test the new profile page layout and that posts do not appear."""
     user = register_user(username='testprofile', password='password')
     login(client, 'testprofile', 'password')
 
-    # Create a post
+    # Create a post that should NOT appear on the profile
     client.post('/create_post', data={
         'text_content': 'This post should not be on my profile.',
         'mode': 'Testing'
-    }, follow_redirects=True)
+    })
 
-    # Visit the user's profile page
     response = client.get(f'/profile/{user.username}')
 
     assert response.status_code == 200
-    # The post content should NOT be on the profile page
+    # Check for new layout classes
+    assert b'new-profile-header' in response.data
+    assert b'profile-stats-bar' in response.data
+    # Check that post content is not there
     assert b'This post should not be on my profile.' not in response.data
-    # The profile should show the "No posts yet" message
+    # Check that the placeholder for posts is there
     assert b'No posts yet.' in response.data
+
+def test_profile_info_section(client):
+    """Test that the new 'Intro' section on the profile displays correctly."""
+    user = register_user(username='infouser', email='info@test.com', password='pw')
+    user.bio = "This is a test bio."
+    user.location = "Test City"
+    user.work_education = "Test University"
+    user.relationship_status = "Single"
+    db.session.commit()
+
+    login(client, 'infouser', 'pw')
+    response = client.get(f'/profile/{user.username}')
+
+    assert response.status_code == 200
+    assert b'This is a test bio.' in response.data
+    assert b'Lives in <strong>Test City</strong>' in response.data
+    assert b'Works at <strong>Test University</strong>' in response.data
+    assert b'<i class="fas fa-heart"></i> Single' in response.data
