@@ -10,26 +10,8 @@ from flask.cli import with_appcontext
 from functools import wraps
 import humanize
 from flask_socketio import SocketIO, emit, join_room, leave_room
-from markupsafe import Markup
-import re
 
 app = Flask(__name__)
-
-@app.template_filter('linkify_mentions')
-def linkify_mentions_filter(text):
-    if not text:
-        return text
-    def replace_mention(match):
-        username = match.group(1)
-        user = User.query.filter_by(username=username).first()
-        if user:
-            url = url_for('profile', username=username)
-            return f'<a href="{url}">@{username}</a>'
-        else:
-            return f'@{username}'
-
-    pattern = r'(?<!\S)@([a-zA-Z0-9_]+)'
-    return Markup(re.sub(pattern, replace_mention, text))
 
 @app.template_filter('humanize_time')
 def _jinja2_filter_humanize_time(dt):
@@ -63,6 +45,11 @@ close_friends = db.Table('close_friends',
     db.Column('close_friend_id', db.Integer, db.ForeignKey('users.id'), primary_key=True)
 )
 
+message_user_deletions = db.Table('message_user_deletions',
+    db.Column('message_id', db.Integer, db.ForeignKey('messages.id'), primary_key=True),
+    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True)
+)
+
 # --- DATABASE MODELS ---
 class User(db.Model):
     __tablename__ = 'users'
@@ -81,7 +68,6 @@ class User(db.Model):
     work_education = db.Column(db.String(150), nullable=True)
     relationship_status = db.Column(db.String(50), nullable=True)
     country = db.Column(db.String(100), nullable=True)
-    last_active_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     posts = db.relationship('Post', backref='author', lazy='dynamic')
     comments = db.relationship('Comment', backref='author', lazy='dynamic')
@@ -186,30 +172,13 @@ class Participant(db.Model):
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
     last_read_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     status = db.Column(db.String(20), default='active', nullable=False)
-    role = db.Column(db.String(20), nullable=False, default='member') # 'admin' or 'member'
-    is_pinned = db.Column(db.Boolean, default=False, nullable=False)
-    muted_until = db.Column(db.DateTime, nullable=True)
-    last_seen_message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=True)
     user = db.relationship('User', back_populates='conversations')
     conversation = db.relationship('Conversation', back_populates='participants')
-
-class MessageReaction(db.Model):
-    __tablename__ = 'message_reactions'
-    id = db.Column(db.Integer, primary_key=True)
-    message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    emoji = db.Column(db.String(50), nullable=False)
-    user = db.relationship('User')
-    __table_args__ = (db.UniqueConstraint('message_id', 'user_id', 'emoji', name='_message_user_emoji_uc'),)
 
 class Conversation(db.Model):
     __tablename__ = 'conversations'
     id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    is_group = db.Column(db.Boolean, default=False, nullable=False)
-    name = db.Column(db.String(150), nullable=True)
-    description = db.Column(db.Text, nullable=True)
-    group_photo_path = db.Column(db.String(255), nullable=True)
     messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade="all, delete-orphan")
     participants = db.relationship('Participant', back_populates='conversation', cascade="all, delete-orphan")
 
@@ -224,19 +193,16 @@ class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    body = db.Column(db.Text, nullable=True)
-    content_type = db.Column(db.String(20), nullable=False, default='text')
-    content_path = db.Column(db.String(255), nullable=True)
-    shared_post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
-    shared_post = db.relationship('Post', lazy='joined')
+    body = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     sender = db.relationship('User')
-    reactions = db.relationship('MessageReaction', backref='message', cascade="all, delete-orphan")
 
-    # Self-referential relationship for message replies
-    parent_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=True)
-    parent = db.relationship('Message', remote_side=[id], backref='replies', lazy='joined')
-    is_pinned = db.Column(db.Boolean, default=False, nullable=False)
+    deleted_by = db.relationship(
+        'User',
+        secondary=message_user_deletions,
+        lazy='subquery',
+        backref=db.backref('deleted_messages', lazy=True)
+    )
 
 class Notification(db.Model):
     __tablename__ = 'notifications'
@@ -287,9 +253,6 @@ def load_logged_in_user():
         g.user = None
     else:
         g.user = db.session.get(User, user_id)
-        if g.user:
-            g.user.last_active_at = datetime.now(timezone.utc)
-            db.session.commit()
 
 @app.context_processor
 def inject_unread_count():
@@ -641,200 +604,6 @@ def suggestions():
         suggested_users = db.session.query(User).join(Post).filter(Post.mode.in_(modes_list), User.id != g.user.id, ~User.id.in_(followed_user_ids)).distinct().limit(20).all()
     return render_template('suggestions.html', suggested_users=suggested_users)
 
-@app.context_processor
-def inject_datetime():
-    return {'datetime': datetime, 'timezone': timezone}
-
-@app.context_processor
-def inject_models():
-    return dict(Comment=Comment)
-
-@app.route('/chat/<int:conversation_id>/info')
-@login_required
-def chat_info(conversation_id):
-    convo = db.get_or_404(Conversation, conversation_id)
-    # Ensure user is a participant
-    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
-    if not participant:
-        return "Not your conversation", 403
-
-    return render_template('chat_info.html', conversation=convo)
-
-@app.route('/chat/<int:conversation_id>/edit', methods=['GET', 'POST'])
-@login_required
-def edit_group_chat(conversation_id):
-    convo = db.get_or_404(Conversation, conversation_id)
-    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
-    if not participant or participant.role != 'admin':
-        flash('You do not have permission to edit this group.', 'error')
-        return redirect(url_for('chat_info', conversation_id=conversation_id))
-
-    if request.method == 'POST':
-        convo.name = request.form.get('group_name', convo.name)
-        convo.description = request.form.get('description', convo.description)
-
-        if 'group_photo' in request.files:
-            file = request.files['group_photo']
-            if file.filename != '':
-                # (Same file upload logic as in create_group)
-                filename = secure_filename(file.filename)
-                group_photos_dir = os.path.join(app.static_folder, 'group_photos')
-                os.makedirs(group_photos_dir, exist_ok=True)
-                unique_filename = f"group_{convo.id}_{int(datetime.now(timezone.utc).timestamp())}_{filename}"
-                file_path = os.path.join(group_photos_dir, unique_filename)
-                file.save(file_path)
-                convo.group_photo_path = os.path.join('group_photos', unique_filename)
-
-        db.session.commit()
-        flash('Group information updated successfully.', 'success')
-        return redirect(url_for('chat_info', conversation_id=conversation_id))
-
-    return render_template('edit_group.html', conversation=convo)
-
-@app.route('/chat/<int:conversation_id>/add_members', methods=['GET', 'POST'])
-@login_required
-def add_group_members(conversation_id):
-    convo = db.get_or_404(Conversation, conversation_id)
-    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
-    if not participant or participant.role != 'admin':
-        flash('You do not have permission to add members to this group.', 'error')
-        return redirect(url_for('chat_info', conversation_id=conversation_id))
-
-    if request.method == 'POST':
-        member_ids_to_add = request.form.getlist('members')
-        for user_id in member_ids_to_add:
-            # Check if user is already a participant
-            is_already_participant = any(p.user_id == int(user_id) for p in convo.participants)
-            if not is_already_participant:
-                new_participant = Participant(user_id=int(user_id), conversation_id=convo.id, role='member')
-                db.session.add(new_participant)
-        db.session.commit()
-        flash('Members added successfully.', 'success')
-        return redirect(url_for('chat_info', conversation_id=conversation_id))
-
-    # For GET request, find users who are not already in the conversation
-    existing_member_ids = [p.user_id for p in convo.participants]
-    potential_members = User.query.filter(User.id.notin_(existing_member_ids)).all()
-
-    return render_template('add_members.html', conversation=convo, users=potential_members)
-
-@app.route('/chat/participant/<int:participant_id>/remove', methods=['POST'])
-@login_required
-def remove_group_member(participant_id):
-    participant_to_remove = db.get_or_404(Participant, participant_id)
-    convo = participant_to_remove.conversation
-    # Security check: ensure current user is an admin of this group
-    current_user_participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
-    if not current_user_participant or current_user_participant.role != 'admin':
-        return {'error': 'Forbidden'}, 403
-
-    # Prevent removing the last admin
-    admins = [p for p in convo.participants if p.role == 'admin']
-    if len(admins) == 1 and participant_to_remove.role == 'admin':
-        flash('Cannot remove the last admin.', 'error')
-        return redirect(url_for('chat_info', conversation_id=convo.id))
-
-    db.session.delete(participant_to_remove)
-    db.session.commit()
-    flash('Member removed.', 'success')
-    return redirect(url_for('chat_info', conversation_id=convo.id))
-
-@app.route('/chat/participant/<int:participant_id>/promote', methods=['POST'])
-@login_required
-def promote_member(participant_id):
-    participant_to_promote = db.get_or_404(Participant, participant_id)
-    convo = participant_to_promote.conversation
-    current_user_participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
-    if not current_user_participant or current_user_participant.role != 'admin':
-        return {'error': 'Forbidden'}, 403
-
-    participant_to_promote.role = 'admin'
-    db.session.commit()
-    flash('Member promoted to admin.', 'success')
-    return redirect(url_for('chat_info', conversation_id=convo.id))
-
-@app.route('/chat/participant/<int:participant_id>/demote', methods=['POST'])
-@login_required
-def demote_admin(participant_id):
-    participant_to_demote = db.get_or_404(Participant, participant_id)
-    convo = participant_to_demote.conversation
-    current_user_participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
-    if not current_user_participant or current_user_participant.role != 'admin':
-        return {'error': 'Forbidden'}, 403
-
-    # Prevent demoting self if last admin
-    admins = [p for p in convo.participants if p.role == 'admin']
-    if len(admins) == 1 and participant_to_demote.user_id == g.user.id:
-        flash('You cannot demote yourself as the last admin.', 'error')
-        return redirect(url_for('chat_info', conversation_id=convo.id))
-
-    participant_to_demote.role = 'member'
-    db.session.commit()
-    flash('Admin demoted to member.', 'success')
-    return redirect(url_for('chat_info', conversation_id=convo.id))
-
-@app.route('/chat/conversation/<int:conversation_id>/leave', methods=['POST'])
-@login_required
-def leave_group(conversation_id):
-    convo = db.get_or_404(Conversation, conversation_id)
-    participant_to_leave = next((p for p in convo.participants if p.user_id == g.user.id), None)
-
-    if not participant_to_leave:
-        return {'error': 'Forbidden'}, 403
-
-    # If the user is the last admin, promote another member
-    admins = [p for p in convo.participants if p.role == 'admin']
-    if len(admins) == 1 and participant_to_leave.role == 'admin':
-        # Find the next longest-standing member to promote
-        other_members = [p for p in convo.participants if p.user_id != g.user.id]
-        if other_members:
-            # Sort by user creation date as a proxy for oldest member
-            other_members.sort(key=lambda p: p.user.created_at)
-            new_admin = other_members[0]
-            new_admin.role = 'admin'
-            flash(f'{new_admin.user.full_name} has been promoted to admin.', 'info')
-        else:
-            # This is the last member, so the group will be deleted
-            db.session.delete(convo)
-            db.session.commit()
-            flash('Group deleted as the last member left.', 'success')
-            return redirect(url_for('chat_inbox'))
-
-    db.session.delete(participant_to_leave)
-    db.session.commit()
-    flash('You have left the group.', 'success')
-    return redirect(url_for('chat_inbox'))
-
-@app.route('/chat/conversation/<int:conversation_id>/mute', methods=['POST'])
-@login_required
-def mute_conversation(conversation_id):
-    participant = Participant.query.filter_by(user_id=g.user.id, conversation_id=conversation_id).first_or_404()
-    duration = request.json.get('duration') # e.g., '8h', '1d', 'forever', 'unmute'
-
-    if duration == 'unmute':
-        participant.muted_until = None
-        flash('Conversation unmuted.', 'success')
-    elif duration == 'forever':
-        # Set a far-future date for 'forever'
-        participant.muted_until = datetime.now(timezone.utc) + timedelta(days=365*100)
-        flash('Conversation muted forever.', 'success')
-    else:
-        # Simple parsing for 'h' (hours) and 'd' (days)
-        now = datetime.now(timezone.utc)
-        if duration.endswith('h'):
-            hours = int(duration[:-1])
-            participant.muted_until = now + timedelta(hours=hours)
-        elif duration.endswith('d'):
-            days = int(duration[:-1])
-            participant.muted_until = now + timedelta(days=days)
-        else:
-            return {'error': 'Invalid duration'}, 400
-        flash(f'Conversation muted for {duration}.', 'success')
-
-    db.session.commit()
-    return {'success': True}
-
-
 @app.route('/chat/<int:conversation_id>')
 @login_required
 def message_thread(conversation_id):
@@ -846,64 +615,15 @@ def message_thread(conversation_id):
     if participant:
         participant.last_read_at = datetime.now(timezone.utc)
         db.session.commit()
-    messages = convo.messages.options(
-        joinedload(Message.reactions).joinedload(MessageReaction.user)
-    ).order_by(Message.created_at.asc()).all()
+
+    # Subquery to get IDs of messages deleted by the current user
+    deleted_message_ids = db.session.query(message_user_deletions.c.message_id).filter_by(user_id=g.user.id).subquery()
+
+    # Fetch messages that are not in the deleted list for the current user
+    messages = convo.messages.filter(Message.id.notin_(deleted_message_ids)).order_by(Message.created_at.asc()).all()
+
     other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
-    other_participant = next((p for p in convo.participants if p.user_id != g.user.id), None)
-    return render_template('message_thread.html', conversation=convo, messages=messages, other_user=other_user, other_participant=other_participant)
-
-@app.route('/chat/new')
-@login_required
-def new_chat():
-    users = User.query.filter(User.id != g.user.id).order_by(User.full_name).all()
-    return render_template('new_chat.html', users=users)
-
-@app.route('/chat/create_group', methods=['GET', 'POST'])
-@login_required
-def create_group():
-    if request.method == 'POST':
-        group_name = request.form.get('group_name')
-        member_ids = request.form.getlist('members')
-
-        if not group_name or not member_ids:
-            flash('Group name and members are required.', 'error')
-            return redirect(url_for('create_group'))
-
-        new_convo = Conversation(
-            name=group_name,
-            is_group=True
-        )
-
-        if 'group_photo' in request.files:
-            file = request.files['group_photo']
-            if file.filename != '':
-                filename = secure_filename(file.filename)
-                group_photos_dir = os.path.join(app.static_folder, 'group_photos')
-                os.makedirs(group_photos_dir, exist_ok=True)
-                unique_filename = f"group_{int(datetime.now(timezone.utc).timestamp())}_{filename}"
-                file_path = os.path.join(group_photos_dir, unique_filename)
-                file.save(file_path)
-                new_convo.group_photo_path = os.path.join('group_photos', unique_filename)
-
-        db.session.add(new_convo)
-        db.session.commit()
-
-        # Add creator as admin
-        admin_participant = Participant(user_id=g.user.id, conversation_id=new_convo.id, status='active', role='admin')
-        db.session.add(admin_participant)
-
-        # Add other members
-        for member_id in member_ids:
-            participant = Participant(user_id=int(member_id), conversation_id=new_convo.id, status='active', role='member')
-            db.session.add(participant)
-
-        db.session.commit()
-        flash('Group created successfully!', 'success')
-        return redirect(url_for('message_thread', conversation_id=new_convo.id))
-
-    users = User.query.filter(User.id != g.user.id).order_by(User.full_name).all()
-    return render_template('create_group.html', users=users)
+    return render_template('message_thread.html', conversation=convo, messages=messages, other_user=other_user)
 
 @app.route('/chat/start/<int:user_id>')
 @login_required
@@ -1085,141 +805,6 @@ def mark_notification_as_read(notification_id):
     db.session.commit()
     return {'success': True}, 200
 
-@app.route('/chat/message/<int:message_id>/react', methods=['POST'])
-@login_required
-def react_to_message(message_id):
-    message = db.get_or_404(Message, message_id)
-    participant = next((p for p in message.conversation.participants if p.user_id == g.user.id), None)
-    if not participant:
-        return {'error': 'Forbidden'}, 403
-
-    emoji = request.json.get('emoji')
-    if not emoji:
-        return {'error': 'Emoji is required'}, 400
-
-    existing_reaction = MessageReaction.query.filter_by(
-        message_id=message_id,
-        user_id=g.user.id,
-        emoji=emoji
-    ).first()
-
-    if existing_reaction:
-        db.session.delete(existing_reaction)
-        db.session.commit()
-        socketio.emit('reaction_removed', {
-            'message_id': message_id,
-            'user_id': g.user.id,
-            'emoji': emoji
-        }, room=str(message.conversation.id))
-        return {'status': 'removed'}, 200
-    else:
-        new_reaction = MessageReaction(
-            message_id=message_id,
-            user_id=g.user.id,
-            emoji=emoji
-        )
-        db.session.add(new_reaction)
-        db.session.commit()
-        socketio.emit('reaction_added', {
-            'message_id': message_id,
-            'user_id': g.user.id,
-            'username': g.user.username,
-            'emoji': emoji
-        }, room=str(message.conversation.id))
-        return {'status': 'added'}, 201
-
-@app.route('/chat/conversation/<int:conversation_id>/upload_media', methods=['POST'])
-@login_required
-def upload_chat_media(conversation_id):
-    participant = Participant.query.filter_by(user_id=g.user.id, conversation_id=conversation_id).first()
-    if not participant:
-        return {'error': 'Forbidden'}, 403
-
-    if 'media_file' not in request.files:
-        return {'error': 'No file part'}, 400
-
-    file = request.files['media_file']
-    if file.filename == '':
-        return {'error': 'No selected file'}, 400
-
-    if file:
-        filename = secure_filename(file.filename)
-        chat_media_dir = os.path.join(app.static_folder, 'chat_media')
-        os.makedirs(chat_media_dir, exist_ok=True)
-
-        unique_filename = f"{g.user.id}_{int(datetime.now(timezone.utc).timestamp())}_{filename}"
-        file_path = os.path.join(chat_media_dir, unique_filename)
-        file.save(file_path)
-
-        relative_path = os.path.join('chat_media', unique_filename)
-
-        content_type = 'photo' if file.mimetype.startswith('image/') else 'video'
-
-        return {'success': True, 'content_path': relative_path, 'content_type': content_type}, 200
-
-    return {'error': 'File upload failed'}, 500
-
-@app.route('/chat/message/<int:message_id>/delete', methods=['POST'])
-@login_required
-def delete_message(message_id):
-    message = db.get_or_404(Message, message_id)
-    if message.user_id != g.user.id:
-        return {'error': 'Forbidden'}, 403
-
-    # Optional: Add a time limit for deletion
-    # time_since_sent = datetime.now(timezone.utc) - message.created_at
-    # if time_since_sent.total_seconds() > 300: # 5 minutes
-    #     return {'error': 'Too late to delete'}, 403
-
-    db.session.delete(message)
-    db.session.commit()
-
-    socketio.emit('message_deleted', {'message_id': message_id}, room=str(message.conversation_id))
-
-    return {'success': True}, 200
-
-@app.route('/chat/message/<int:message_id>/pin', methods=['POST'])
-@login_required
-def pin_message(message_id):
-    message = db.get_or_404(Message, message_id)
-    convo = message.conversation
-    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
-    if not participant or participant.role != 'admin':
-        return {'error': 'Forbidden'}, 403
-
-    message.is_pinned = not message.is_pinned # Toggle pin status
-    db.session.commit()
-
-    socketio.emit('message_pin_status_changed', {
-        'message_id': message.id,
-        'is_pinned': message.is_pinned
-    }, room=str(convo.id))
-
-    return {'success': True, 'is_pinned': message.is_pinned}
-
-@app.route('/chat/conversations')
-@login_required
-def get_conversations():
-    user_participant_entries = Participant.query.filter_by(user_id=g.user.id, status='active').all()
-    conversations_data = []
-    for p_entry in user_participant_entries:
-        convo = p_entry.conversation
-        if convo.is_group:
-            name = convo.name
-            image = url_for('static', filename=convo.group_photo_path) if convo.group_photo_path else url_for('static', filename='img/default-avatar.png')
-        else:
-            other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
-            if not other_user: continue
-            name = other_user.full_name
-            image = url_for('static', filename='img/default-avatar.png') # Placeholder
-
-        conversations_data.append({
-            'id': convo.id,
-            'name': name,
-            'image': image
-        })
-    return {'conversations': conversations_data}
-
 # --- SOCKETIO EVENTS ---
 @socketio.on('send_message')
 def handle_send_message_event(data):
@@ -1230,113 +815,41 @@ def handle_send_message_event(data):
     participant_users = [p.user for p in convo.participants]
     if user not in participant_users:
         return
-
-    parent_id = data.get('parent_id')
-
-    new_message = Message(
-        conversation_id=data['room'],
-        user_id=user_id,
-        body=data.get('message'),
-        parent_id=data.get('parent_id'),
-        content_type=data.get('content_type', 'text'),
-        content_path=data.get('content_path'),
-        shared_post_id=data.get('shared_post_id')
-    )
+    new_message = Message(conversation_id=data['room'], user_id=user_id, body=data['message'])
     db.session.add(new_message)
-
-    # Handle mentions
-    if new_message.body:
-        mentioned_usernames = re.findall(r'(?<!\S)@([a-zA-Z0-9_]+)', new_message.body)
-        if mentioned_usernames:
-            mentioned_users = User.query.filter(User.username.in_(mentioned_usernames)).all()
-            for user in mentioned_users:
-                if user.id != new_message.user_id: # Don't notify for self-mentions
-                    notification = Notification(
-                        recipient_id=user.id,
-                        sender_id=new_message.user_id,
-                        type='mention',
-                        related_id=new_message.conversation_id
-                    )
-                    db.session.add(notification)
-
     db.session.commit()
-
-    parent_message_data = None
-    if new_message.parent:
-        parent_message_data = {
-            'body': new_message.parent.body,
-            'author_name': new_message.parent.sender.full_name
-        }
-
-    shared_post_data = None
-    if new_message.shared_post:
-        shared_post_data = {
-            'id': new_message.shared_post.id,
-            'text': new_message.shared_post.text,
-            'author_name': new_message.shared_post.author.full_name,
-            'content_path': new_message.shared_post.content_path,
-            'content_type': new_message.shared_post.content_type
-        }
-
-    message_data = {
-        'id': new_message.id,
-        'body': new_message.body,
-        'author_name': new_message.sender.full_name,
-        'author_username': new_message.sender.username,
-        'user_id': new_message.user_id,
-        'created_at': new_message.created_at.isoformat(),
-        'parent': parent_message_data,
-        'content_type': new_message.content_type,
-        'content_path': new_message.content_path,
-        'shared_post': shared_post_data
-    }
+    message_data = {'body': new_message.body, 'author_name': new_message.sender.full_name, 'author_username': new_message.sender.username, 'user_id': new_message.user_id}
     emit('new_message', message_data, room=data['room'])
 
 @socketio.on('join')
 def on_join(data):
-    user_id = session.get('user_id')
-    if not user_id: return
     room = data['room']
     join_room(room)
-    emit('user_stopped_typing', {'user_id': user_id}, room=room, include_self=False)
 
 @socketio.on('leave')
 def on_leave(data):
-    user_id = session.get('user_id')
-    if not user_id: return
     room = data['room']
     leave_room(room)
-    emit('user_stopped_typing', {'user_id': user_id}, room=room, include_self=False)
 
-@socketio.on('typing_start')
-def handle_typing_start(data):
-    user_id = session.get('user_id')
-    if not user_id: return
-    user = db.session.get(User, user_id)
-    if not user: return
-    room = data['room']
-    emit('user_typing', {'user_id': user.id, 'username': user.username}, room=room, include_self=False)
+@app.route('/chat/message/<int:message_id>/delete_for_me', methods=['POST'])
+@login_required
+def delete_message_for_me(message_id):
+    message = db.get_or_404(Message, message_id)
+    if g.user not in message.deleted_by:
+        message.deleted_by.append(g.user)
+        db.session.commit()
+    return {'success': True}
 
-@socketio.on('typing_stop')
-def handle_typing_stop(data):
-    user_id = session.get('user_id')
-    if not user_id: return
-    room = data['room']
-    emit('user_stopped_typing', {'user_id': user_id}, room=room, include_self=False)
-
-@socketio.on('message_seen')
-def handle_message_seen(data):
-    user_id = session.get('user_id')
-    if not user_id: return
-    conversation_id = data['room']
-    message_id = data['message_id']
-
-    participant = Participant.query.filter_by(user_id=user_id, conversation_id=conversation_id).first()
-    if participant:
-        if not participant.last_seen_message_id or message_id > participant.last_seen_message_id:
-            participant.last_seen_message_id = message_id
-            db.session.commit()
-            emit('message_was_seen', {'message_id': message_id, 'user_id': user_id}, room=str(conversation_id), include_self=False)
+@app.route('/chat/message/<int:message_id>/delete', methods=['POST'])
+@login_required
+def delete_message(message_id):
+    message = db.get_or_404(Message, message_id)
+    if message.user_id != g.user.id:
+        return {'error': 'Forbidden'}, 403
+    db.session.delete(message)
+    db.session.commit()
+    socketio.emit('message_deleted', {'message_id': message_id}, room=str(message.conversation_id))
+    return {'success': True}
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)
