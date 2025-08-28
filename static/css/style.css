@@ -1598,17 +1598,94 @@ body:has(.main-nav) {
     opacity: 0.9;
 }
 
-.message-composer textarea {
+.message-composer form {
+    align-items: flex-end;
+}
+.composer-input-container {
     flex-grow: 1;
+    display: flex;
+    align-items: center;
     border: 1px solid #dbdbdb;
     border-radius: 18px;
-    padding: 10px 15px;
+    padding: 0 10px;
+}
+.message-composer textarea {
+    flex-grow: 1;
+    border: none;
+    padding: 10px 5px;
     outline: none;
     resize: none;
     font-family: inherit;
     line-height: 1.4;
     min-height: 40px; /* Corresponds to rows=1 and padding */
     max-height: 120px; /* Matches JS */
+    background: transparent;
+}
+.emoji-btn {
+    margin-left: 5px;
+}
+
+/* Shared Post Card in Chat */
+.shared-post-card {
+    border: 1px solid #dbdbdb;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 5px 0;
+}
+.shared-post-card a {
+    text-decoration: none;
+    color: inherit;
+}
+.shared-post-media {
+    max-width: 100%;
+}
+.shared-post-info {
+    padding: 10px;
+}
+.shared-post-info strong {
+    display: block;
+    font-size: 14px;
+}
+.shared-post-info p {
+    font-size: 14px;
+    margin: 5px 0 0 0;
+    color: #8e8e8e;
+}
+
+/* Share Options Menu */
+.share-action-container {
+    position: relative;
+}
+
+.share-options-menu {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #fff;
+    border: 1px solid #dbdbdb;
+    border-radius: 8px;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+    padding: 8px;
+    margin-bottom: 5px;
+    width: 200px;
+    z-index: 100;
+}
+
+.share-options-menu button {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 5px;
+}
+
+.share-options-menu button:hover {
+    background-color: #f0f2f5;
 }
 
 /* Media in Chat Bubbles */
