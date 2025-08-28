@@ -55,11 +55,19 @@ To get a local copy up and running, follow these simple steps.
     pip install -r requirements.txt
     ```
 
-4.  **Initialize the Database**
-    The first time you run the app, you need to initialize the SQLite database and seed it with the available "Modes".
-    ```sh
-    flask init-db
-    ```
+4.  **Database Migrations**
+    This application uses Flask-Migrate to handle database schema changes.
+
+    *   **For the first time setting up the project:**
+        You need to apply the initial migration to create the database tables.
+        ```sh
+        flask db upgrade
+        ```
+    *   **When pulling new changes:**
+        If there have been changes to the database models, you will need to apply the new migrations.
+        ```sh
+        flask db upgrade
+        ```
 
 5.  **Run the Application**
     ```sh
