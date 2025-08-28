@@ -40,6 +40,11 @@ user_modes = db.Table('user_modes',
     db.Column('mode_id', db.Integer, db.ForeignKey('modes.id'), primary_key=True)
 )
 
+close_friends = db.Table('close_friends',
+    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
+    db.Column('close_friend_id', db.Integer, db.ForeignKey('users.id'), primary_key=True)
+)
+
 # --- DATABASE MODELS ---
 class User(db.Model):
     __tablename__ = 'users'
@@ -87,6 +92,27 @@ class User(db.Model):
     def is_following(self, user):
         return self.followed.filter(
             followers.c.followed_id == user.id).count() > 0
+
+    close_friends = db.relationship(
+        'User',
+        secondary=close_friends,
+        primaryjoin=(close_friends.c.user_id == id),
+        secondaryjoin=(close_friends.c.close_friend_id == id),
+        backref=db.backref('close_friend_of', lazy='dynamic'),
+        lazy='dynamic'
+    )
+
+    def add_close_friend(self, user):
+        if not self.is_close_friend(user):
+            self.close_friends.append(user)
+
+    def remove_close_friend(self, user):
+        if self.is_close_friend(user):
+            self.close_friends.remove(user)
+
+    def is_close_friend(self, user):
+        return self.close_friends.filter(
+            close_friends.c.close_friend_id == user.id).count() > 0
 
     def has_reacted_to(self, post):
         return Reaction.query.filter(
@@ -274,6 +300,18 @@ def follow(user_id):
             type='follow'
         )
         db.session.add(notification)
+
+        # Check for follower milestones for achievement notifications
+        follower_count = user_to_follow.followers.count()
+        milestones = [10, 100, 1000, 10000] # Define milestones
+        if follower_count in milestones:
+            achievement_notif = Notification(
+                recipient_id=user_to_follow.id,
+                type='achievement',
+                related_id=follower_count # Store the milestone number
+            )
+            db.session.add(achievement_notif)
+
         db.session.commit()
         flash(f'You are now following {user_to_follow.username}.', 'success')
     return redirect(request.referrer or url_for('home'))
@@ -287,6 +325,26 @@ def unfollow(user_id):
         db.session.commit()
         flash(f'You have unfollowed {user_to_unfollow.username}.', 'success')
     return redirect(request.referrer or url_for('home'))
+
+@app.route('/add_close_friend/<int:user_id>')
+@login_required
+def add_close_friend(user_id):
+    user_to_add = db.get_or_404(User, user_id)
+    if user_to_add != g.user:
+        g.user.add_close_friend(user_to_add)
+        db.session.commit()
+        flash(f'{user_to_add.username} has been added to your Close Friends.', 'success')
+    return redirect(request.referrer or url_for('profile', username=user_to_add.username))
+
+@app.route('/remove_close_friend/<int:user_id>')
+@login_required
+def remove_close_friend(user_id):
+    user_to_remove = db.get_or_404(User, user_id)
+    if user_to_remove != g.user:
+        g.user.remove_close_friend(user_to_remove)
+        db.session.commit()
+        flash(f'{user_to_remove.username} has been removed from your Close Friends.', 'success')
+    return redirect(request.referrer or url_for('profile', username=user_to_remove.username))
 
 @app.route('/react/<int:post_id>')
 @login_required

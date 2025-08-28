@@ -1371,6 +1371,9 @@ body:has(.main-nav) {
 .notification-unread {
     background-color: #e7f3ff; /* A light blue for unread notifications */
 }
+.notification-priority {
+    border-left: 4px solid #FFD700; /* Gold border for priority */
+}
 .notification-avatar img {
     width: 56px;
     height: 56px;

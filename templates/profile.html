@@ -38,6 +38,13 @@
             {% endif %}
         </div>
         <div class="action-buttons-right">
+            {% if user != g.user %}
+                {% if g.user.is_close_friend(user) %}
+                    <a href="{{ url_for('remove_close_friend', user_id=user.id) }}" class="btn-profile-action"><i class="fas fa-star" style="color: #FFD700;"></i> Close Friend</a>
+                {% else %}
+                    <a href="{{ url_for('add_close_friend', user_id=user.id) }}" class="btn-profile-action"><i class="far fa-star"></i> Add to Close Friends</a>
+                {% endif %}
+            {% endif %}
             <a href="#" class="btn-profile-action more-btn"><i class="fas fa-ellipsis-h"></i></a>
         </div>
     </div>

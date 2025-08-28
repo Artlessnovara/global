@@ -104,3 +104,48 @@ def test_post_detail_page_loads(client):
     response = client.get(f'/post/{post.id}')
     assert response.status_code == 200
     assert b'A post to be viewed' in response.data
+
+def test_close_friends_notifications(client):
+    """Test close friends functionality and priority notification highlighting."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+
+    # user1 adds user2 as a close friend
+    login(client, 'user1', 'pw')
+    client.get(f'/add_close_friend/{user2.id}')
+    assert user1.is_close_friend(user2)
+    logout(client)
+
+    # user2 follows user1, creating a notification
+    login(client, 'user2', 'pw')
+    client.get(f'/follow/{user1.id}')
+    logout(client)
+
+    # Log in as user1 and check that the notification is highlighted
+    login(client, 'user1', 'pw')
+    response = client.get('/notifications')
+    assert b'notification-priority' in response.data
+
+def test_achievement_notification(client):
+    """Test that an achievement notification is created at a milestone."""
+    # Create 9 follower users
+    for i in range(9):
+        register_user(username=f'follower{i}', email=f'f{i}@test.com', password='pw')
+
+    main_user = register_user(username='mainuser', email='main@test.com', password='pw')
+
+    # Have the 9 users follow main_user
+    for i in range(9):
+        login(client, f'follower{i}', 'pw')
+        client.get(f'/follow/{main_user.id}')
+        logout(client)
+
+    # The 10th follower triggers the achievement
+    tenth_follower = register_user(username='follower10', email='f10@test.com', password='pw')
+    login(client, 'follower10', 'pw')
+    client.get(f'/follow/{main_user.id}')
+
+    # Check for the achievement notification
+    notification = Notification.query.filter_by(recipient_id=main_user.id, type='achievement').first()
+    assert notification is not None
+    assert notification.related_id == 10

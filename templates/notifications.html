@@ -21,7 +21,10 @@
                 {% for notification in notifications %}
                     {% set link = url_for('profile', username=notification.sender.username) if notification.type == 'follow' else url_for('post_detail', post_id=notification.related_id) if notification.type == 'like' else '#' %}
                     <a href="{{ link }}" class="notification-item-link" onclick="markNotificationRead({{ notification.id }})">
-                        <div class="notification-item {% if not notification.is_read %}notification-unread{% endif %}" id="notification-{{ notification.id }}">
+                        <div class="notification-item
+                             {% if not notification.is_read %}notification-unread{% endif %}
+                             {% if notification.sender and g.user.is_close_friend(notification.sender) %}notification-priority{% endif %}"
+                             id="notification-{{ notification.id }}">
                             <div class="notification-avatar">
                                 {% if notification.sender %}
                                     <img src="https://i.pravatar.cc/150?u={{ notification.sender.username }}" alt="{{ notification.sender.username }}">
@@ -34,6 +37,8 @@
                                     <strong>{{ notification.sender.username }}</strong> liked your post.
                                 {% elif notification.type == 'follow' %}
                                     <strong>{{ notification.sender.username }}</strong> started following you.
+                            {% elif notification.type == 'achievement' %}
+                                Congratulations! You've reached <strong>{{ notification.related_id }}</strong> followers! 🎉
                                 {% else %}
                                     A new notification.
                                 {% endif %}
