@@ -1,4 +1,5 @@
 import pytest
+import io
 from tests.test_auth import register_user, login, logout
 from app import db, User, Conversation, Message, Participant, socketio
 
@@ -164,3 +165,78 @@ def test_send_and_receive_reply_message(client, app):
     assert b'parent-message-preview' in response.data
     assert bytes(parent_message.body, 'utf-8') in response.data
     assert bytes(user1.full_name, 'utf-8') in response.data
+
+def test_send_media_message(client, app):
+    """Test uploading a media file and sending it as a message."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+    convo = Conversation()
+    p1 = Participant(user=user1, conversation=convo)
+    p2 = Participant(user=user2, conversation=convo)
+    db.session.add_all([convo, p1, p2])
+    db.session.commit()
+
+    login(client, 'user1', 'pw')
+
+    # 1. Upload the media file
+    dummy_file = io.BytesIO(b"this is a fake image")
+    response = client.post(f'/chat/conversation/{convo.id}/upload_media', data={
+        'media_file': (dummy_file, 'test.jpg'),
+    }, content_type='multipart/form-data')
+
+    assert response.status_code == 200
+    upload_data = response.json
+    assert upload_data['success'] == True
+    assert 'content_path' in upload_data
+
+    # 2. Send the message via socket
+    socketio_client = socketio.test_client(app, flask_test_client=client)
+    socketio_client.emit('join', {'room': str(convo.id)})
+    socketio_client.emit('send_message', {
+        'room': str(convo.id),
+        'message': 'Check out this pic!',
+        'content_type': upload_data['content_type'],
+        'content_path': upload_data['content_path']
+    })
+
+    # 3. Verify message in DB
+    media_message = Message.query.filter_by(content_type='photo').first()
+    assert media_message is not None
+    assert media_message.body == 'Check out this pic!'
+    assert media_message.content_path == upload_data['content_path']
+
+    # 4. Verify rendered HTML
+    response = client.get(f'/chat/{convo.id}')
+    assert response.status_code == 200
+    assert bytes(upload_data['content_path'], 'utf-8') in response.data
+    assert b'chat-media-photo' in response.data
+
+def test_delete_message(client, app):
+    """Test deleting a message for everyone."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    convo = Conversation()
+    p1 = Participant(user=user1, conversation=convo)
+    message_to_delete = Message(conversation=convo, sender=user1, body="This will be deleted.")
+    db.session.add_all([convo, p1, message_to_delete])
+    db.session.commit()
+
+    message_id = message_to_delete.id
+    assert Message.query.get(message_id) is not None
+
+    login(client, 'user1', 'pw')
+
+    # Listen for the socket event
+    socketio_client = socketio.test_client(app, flask_test_client=client)
+    socketio_client.emit('join', {'room': str(convo.id)})
+
+    # Call the delete route
+    response = client.post(f'/chat/message/{message_id}/delete')
+    assert response.status_code == 200
+
+    # Verify message is deleted from DB
+    assert Message.query.get(message_id) is None
+
+    # Verify socket event was broadcast
+    received = socketio_client.get_received()
+    assert received[0]['name'] == 'message_deleted'
+    assert received[0]['args'][0]['message_id'] == message_id

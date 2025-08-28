@@ -1521,6 +1521,14 @@ body:has(.main-nav) {
     background-color: #f0f2f5;
 }
 
+.context-menu ul li.danger-option {
+    color: #ed4956;
+}
+
+.context-menu ul li.danger-option:hover {
+    background-color: #fce8e8;
+}
+
 /* Reply Feature Styles */
 .reply-preview {
     display: flex;
@@ -1601,4 +1609,62 @@ body:has(.main-nav) {
     line-height: 1.4;
     min-height: 40px; /* Corresponds to rows=1 and padding */
     max-height: 120px; /* Matches JS */
+}
+
+/* Media in Chat Bubbles */
+.chat-media-photo, .chat-media-video {
+    max-width: 100%;
+    border-radius: 15px;
+}
+.message-bubble > .chat-media-photo, .message-bubble > .chat-media-video {
+    margin-bottom: 5px;
+}
+.message-bubble > p {
+    margin-top: 5px;
+}
+
+.composer-actions {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.composer-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #8e8e8e;
+    cursor: pointer;
+    padding: 8px;
+}
+
+.composer-menu {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    background-color: #fff;
+    border: 1px solid #dbdbdb;
+    border-radius: 8px;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+    padding: 8px;
+    margin-bottom: 5px;
+    width: 200px;
+}
+
+.composer-menu button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px;
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 5px;
+}
+
+.composer-menu button:hover {
+    background-color: #f0f2f5;
 }
