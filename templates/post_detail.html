@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Post by {{ post.author.username }} - GLOOBA{% endblock %}
+
+{% block content %}
+<div class="main-content">
+    <div style="max-width: 600px; margin: 0 auto;">
+        {% if post %}
+            {% include '_post_card.html' %}
+
+            <!-- Comment section placeholder -->
+            <div class="comments-section" style="margin-top: 20px;">
+                <h3>Comments</h3>
+                <div class="post-placeholder">
+                    <p>Comments are coming soon!</p>
+                </div>
+            </div>
+        {% else %}
+            <div class="post-placeholder">
+                <h2>Post not found</h2>
+                <p>This post may have been deleted or the link is incorrect.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -19,8 +19,9 @@
         <div class="notification-list">
             {% if notifications %}
                 {% for notification in notifications %}
-                    <a href="#" class="notification-item-link">
-                        <div class="notification-item {% if not notification.is_read %}notification-unread{% endif %}">
+                    {% set link = url_for('profile', username=notification.sender.username) if notification.type == 'follow' else url_for('post_detail', post_id=notification.related_id) if notification.type == 'like' else '#' %}
+                    <a href="{{ link }}" class="notification-item-link" onclick="markNotificationRead({{ notification.id }})">
+                        <div class="notification-item {% if not notification.is_read %}notification-unread{% endif %}" id="notification-{{ notification.id }}">
                             <div class="notification-avatar">
                                 {% if notification.sender %}
                                     <img src="https://i.pravatar.cc/150?u={{ notification.sender.username }}" alt="{{ notification.sender.username }}">
@@ -55,4 +56,26 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function markNotificationRead(notificationId) {
+        // Optimistically remove the 'unread' style from the UI
+        const notificationElement = document.getElementById('notification-' + notificationId);
+        if (notificationElement) {
+            notificationElement.classList.remove('notification-unread');
+        }
+
+        // Send a request to the server to mark it as read in the background
+        fetch(`/notifications/read/${notificationId}`, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest' // Often good practice for fetch requests
+            }
+        }).catch(error => console.error('Error marking notification as read:', error));
+
+        // The function does not prevent the default link navigation
+    }
+</script>
 {% endblock %}

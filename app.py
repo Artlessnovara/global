@@ -612,14 +612,27 @@ def notifications():
 
     user_notifications = query.order_by(Notification.created_at.desc()).all()
 
-    # Mark all unread notifications as read (only if viewing 'All')
-    if not active_filter:
-        unread_ids = [n.id for n in user_notifications if not n.is_read]
-        if unread_ids:
-            Notification.query.filter(Notification.id.in_(unread_ids)).update({'is_read': True}, synchronize_session=False)
-            db.session.commit()
-
+    # The logic to mark all as read is removed from here.
+    # It will be handled by a separate route on a per-notification basis.
     return render_template('notifications.html', notifications=user_notifications, active_filter=active_filter)
+
+@app.route('/post/<int:post_id>')
+@login_required
+def post_detail(post_id):
+    """Displays a single post in detail."""
+    post = db.get_or_404(Post, post_id)
+    return render_template('post_detail.html', post=post)
+
+@app.route('/notifications/read/<int:notification_id>', methods=['POST'])
+@login_required
+def mark_notification_as_read(notification_id):
+    notification = Notification.query.get_or_404(notification_id)
+    if notification.recipient_id != g.user.id:
+        return {'error': 'Forbidden'}, 403
+
+    notification.is_read = True
+    db.session.commit()
+    return {'success': True}, 200
 
 # --- SOCKETIO EVENTS ---
 @socketio.on('send_message')
