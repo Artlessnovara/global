@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timedelta, date, timezone
 from flask import Flask, render_template, request, redirect, url_for, session, flash, g
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import joinedload
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import click
@@ -166,6 +167,12 @@ class Notification(db.Model):
 
     recipient = db.relationship('User', foreign_keys=[recipient_id], backref='notifications')
     sender = db.relationship('User', foreign_keys=[sender_id])
+
+    # Define a relationship to the Post model for 'like' notifications
+    related_post = db.relationship('Post',
+        primaryjoin="and_(Notification.type=='like', foreign(Notification.related_id)==Post.id)",
+        uselist=False,
+        viewonly=True)
 
 # --- CLI COMMANDS ---
 @click.command('init-db')
@@ -591,16 +598,28 @@ def story_viewer(story_id):
 @login_required
 def notifications():
     """Display a list of notifications for the user."""
-    # Fetch notifications and order by most recent
-    user_notifications = Notification.query.filter_by(recipient_id=g.user.id).order_by(Notification.created_at.desc()).all()
+    active_filter = request.args.get('filter', None)
 
-    # Mark all unread notifications as read
-    unread_ids = [n.id for n in user_notifications if not n.is_read]
-    if unread_ids:
-        Notification.query.filter(Notification.id.in_(unread_ids)).update({'is_read': True}, synchronize_session=False)
-        db.session.commit()
+    # Base query
+    query = Notification.query.options(
+        joinedload(Notification.sender),
+        joinedload(Notification.related_post)
+    ).filter_by(recipient_id=g.user.id)
 
-    return render_template('notifications.html', notifications=user_notifications)
+    # Apply filter if one is provided
+    if active_filter in ['like', 'follow']: # Add other types here as they are implemented
+        query = query.filter_by(type=active_filter)
+
+    user_notifications = query.order_by(Notification.created_at.desc()).all()
+
+    # Mark all unread notifications as read (only if viewing 'All')
+    if not active_filter:
+        unread_ids = [n.id for n in user_notifications if not n.is_read]
+        if unread_ids:
+            Notification.query.filter(Notification.id.in_(unread_ids)).update({'is_read': True}, synchronize_session=False)
+            db.session.commit()
+
+    return render_template('notifications.html', notifications=user_notifications, active_filter=active_filter)
 
 # --- SOCKETIO EVENTS ---
 @socketio.on('send_message')

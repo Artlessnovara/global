@@ -5,30 +5,49 @@
 {% block content %}
 <div class="main-content">
     <div class="settings-card">
-        <h1>Notifications</h1>
+        <div class="notifications-header">
+            <h1>Notifications</h1>
+            <!-- Add filter/settings icon later -->
+        </div>
+
+        <div class="profile-nav-tabs">
+            <a href="{{ url_for('notifications') }}" class="tab-link {% if not active_filter %}active{% endif %}">All</a>
+            <a href="{{ url_for('notifications', filter='follow') }}" class="tab-link {% if active_filter == 'follow' %}active{% endif %}">Follows</a>
+            <a href="{{ url_for('notifications', filter='like') }}" class="tab-link {% if active_filter == 'like' %}active{% endif %}">Likes</a>
+        </div>
 
         <div class="notification-list">
             {% if notifications %}
                 {% for notification in notifications %}
-                    <div class="notification-item {% if not notification.is_read %}notification-unread{% endif %}">
-                        <div class="notification-avatar">
-                            {% if notification.sender %}
-                                <img src="https://i.pravatar.cc/150?u={{ notification.sender.username }}" alt="{{ notification.sender.username }}">
-                            {% else %}
-                                <img src="https://i.pravatar.cc/150?u=system" alt="System">
-                            {% endif %}
+                    <a href="#" class="notification-item-link">
+                        <div class="notification-item {% if not notification.is_read %}notification-unread{% endif %}">
+                            <div class="notification-avatar">
+                                {% if notification.sender %}
+                                    <img src="https://i.pravatar.cc/150?u={{ notification.sender.username }}" alt="{{ notification.sender.username }}">
+                                {% else %}
+                                    <img src="https://i.pravatar.cc/150?u=system" alt="System">
+                                {% endif %}
+                            </div>
+                            <div class="notification-text">
+                                {% if notification.type == 'like' %}
+                                    <strong>{{ notification.sender.username }}</strong> liked your post.
+                                {% elif notification.type == 'follow' %}
+                                    <strong>{{ notification.sender.username }}</strong> started following you.
+                                {% else %}
+                                    A new notification.
+                                {% endif %}
+                                <span class="notification-time">{{ notification.created_at|humanize_time }}</span>
+                            </div>
+                            <div class="notification-thumbnail">
+                                {% if notification.type == 'like' and notification.related_post %}
+                                    {# Assuming text posts for now, no real thumbnail #}
+                                    <div class="thumbnail-placeholder">
+                                        <i class="fas fa-file-alt"></i>
+                                    </div>
+                                {% endif %}
+                            </div>
                         </div>
-                        <div class="notification-text">
-                            {% if notification.type == 'like' %}
-                                <strong>{{ notification.sender.username }}</strong> liked your post.
-                            {% elif notification.type == 'follow' %}
-                                <strong>{{ notification.sender.username }}</strong> started following you.
-                            {% else %}
-                                A new notification.
-                            {% endif %}
-                            <span class="notification-time">{{ notification.created_at|humanize_time }}</span>
-                        </div>
-                    </div>
+                    </a>
                 {% endfor %}
             {% else %}
                 <p>You have no notifications yet.</p>

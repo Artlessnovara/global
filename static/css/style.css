@@ -1345,3 +1345,56 @@ body:has(.main-nav) {
     flex-grow: 1;
     min-width: 150px;
 }
+
+/* Notification Page Styles */
+.notification-list {
+    margin-top: 20px;
+}
+.notification-item-link {
+    text-decoration: none;
+    color: inherit;
+}
+.notification-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px;
+    border-radius: 8px;
+    transition: background-color 0.2s;
+}
+.notification-item:not(:last-child) {
+    border-bottom: 1px solid #f0f0f0;
+}
+.notification-item:hover {
+    background-color: #f7f7f7;
+}
+.notification-unread {
+    background-color: #e7f3ff; /* A light blue for unread notifications */
+}
+.notification-avatar img {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+}
+.notification-text {
+    flex-grow: 1;
+    font-size: 15px;
+}
+.notification-time {
+    font-size: 13px;
+    color: #8e8e8e;
+    margin-top: 4px;
+    display: block;
+}
+.notification-thumbnail .thumbnail-placeholder {
+    width: 56px;
+    height: 56px;
+    background-color: #efefef;
+    border: 1px solid #dbdbdb;
+    border-radius: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #8e8e8e;
+    font-size: 24px;
+}
