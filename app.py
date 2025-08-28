@@ -131,12 +131,6 @@ class Post(db.Model):
     text = db.Column(db.Text, nullable=True)
     mode = db.Column(db.String(50), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-
-    # Sharing and reposting fields
-    share_count = db.Column(db.Integer, default=0, nullable=False)
-    original_post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
-    original_post = db.relationship('Post', remote_side=[id], backref='reposts')
-
     reactions = db.relationship('Reaction', backref='post', lazy='dynamic')
     comments = db.relationship('Comment', backref='post', lazy='dynamic', cascade="all, delete-orphan")
 
@@ -147,21 +141,6 @@ class Comment(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=False)
-
-    # Self-referential relationship for threaded comments
-    parent_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=True)
-    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
-    reactions = db.relationship('CommentReaction', backref='comment', cascade="all, delete-orphan")
-
-class CommentReaction(db.Model):
-    __tablename__ = 'comment_reactions'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    comment_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=False)
-    emoji = db.Column(db.String(50), nullable=False)
-
-    user = db.relationship('User')
-    __table_args__ = (db.UniqueConstraint('user_id', 'comment_id', 'emoji', name='_user_comment_emoji_uc'),)
 
 class Story(db.Model):
     __tablename__ = 'stories'
@@ -182,16 +161,30 @@ class Mode(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), unique=True, nullable=False)
 
+class Participant(db.Model):
+    __tablename__ = 'participants'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
+    last_read_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    status = db.Column(db.String(20), default='active', nullable=False)
+    last_seen_message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=True)
+    user = db.relationship('User', back_populates='conversations')
+    conversation = db.relationship('Conversation', back_populates='participants')
+
+class MessageReaction(db.Model):
+    __tablename__ = 'message_reactions'
+    id = db.Column(db.Integer, primary_key=True)
+    message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    emoji = db.Column(db.String(50), nullable=False)
+    user = db.relationship('User')
+    __table_args__ = (db.UniqueConstraint('message_id', 'user_id', 'emoji', name='_message_user_emoji_uc'),)
+
 class Conversation(db.Model):
     __tablename__ = 'conversations'
     id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-
-    # Group chat specific fields
-    is_group = db.Column(db.Boolean, default=False, nullable=False)
-    name = db.Column(db.String(150), nullable=True)
-    group_photo_path = db.Column(db.String(255), nullable=True)
-
     messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade="all, delete-orphan")
     participants = db.relationship('Participant', back_populates='conversation', cascade="all, delete-orphan")
 
@@ -211,45 +204,9 @@ class Message(db.Model):
     sender = db.relationship('User')
     reactions = db.relationship('MessageReaction', backref='message', cascade="all, delete-orphan")
 
-class MessageReaction(db.Model):
-    __tablename__ = 'message_reactions'
-    id = db.Column(db.Integer, primary_key=True)
-    message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    emoji = db.Column(db.String(50), nullable=False)
-    user = db.relationship('User')
-    __table_args__ = (db.UniqueConstraint('message_id', 'user_id', 'emoji', name='_message_user_emoji_uc'),)
-
-class BlockedUser(db.Model):
-    __tablename__ = 'blocked_users'
-    id = db.Column(db.Integer, primary_key=True)
-    blocker_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    blocked_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-
-    __table_args__ = (db.UniqueConstraint('blocker_id', 'blocked_id', name='_blocker_blocked_uc'),)
-
-class Report(db.Model):
-    __tablename__ = 'reports'
-    id = db.Column(db.Integer, primary_key=True)
-    reporter_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    reported_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    reported_conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=True)
-    reason = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-
-class Participant(db.Model):
-    __tablename__ = 'participants'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
-    last_read_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    status = db.Column(db.String(20), default='active', nullable=False) # active, pending, blocked, archived
-    last_seen_message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=True)
-    is_pinned = db.Column(db.Boolean, default=False, nullable=False)
-    is_muted = db.Column(db.Boolean, default=False, nullable=False)
-    user = db.relationship('User', back_populates='conversations')
-    conversation = db.relationship('Conversation', back_populates='participants')
+    # Self-referential relationship for message replies
+    parent_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=True)
+    parent = db.relationship('Message', remote_side=[id], backref='replies', lazy='joined')
 
 class Notification(db.Model):
     __tablename__ = 'notifications'
@@ -264,9 +221,9 @@ class Notification(db.Model):
     recipient = db.relationship('User', foreign_keys=[recipient_id], backref='notifications')
     sender = db.relationship('User', foreign_keys=[sender_id])
 
-    # Define a relationship to the Post model for various notification types
+    # Define a relationship to the Post model for 'like' notifications
     related_post = db.relationship('Post',
-        primaryjoin="and_(Notification.type.in_(['like', 'comment', 'share']), foreign(Notification.related_id)==Post.id)",
+        primaryjoin="and_(Notification.type=='like', foreign(Notification.related_id)==Post.id)",
         uselist=False,
         viewonly=True)
 
@@ -322,14 +279,6 @@ def inject_unread_count():
             total_unread_notifications=total_unread_notifications
         )
     return dict(total_unread_messages=0, total_unread_notifications=0)
-
-@app.context_processor
-def inject_datetime():
-    return {'datetime': datetime, 'timezone': timezone}
-
-@app.context_processor
-def inject_models():
-    return dict(Comment=Comment)
 
 def login_required(f):
     @wraps(f)
@@ -662,20 +611,13 @@ def suggestions():
         suggested_users = db.session.query(User).join(Post).filter(Post.mode.in_(modes_list), User.id != g.user.id, ~User.id.in_(followed_user_ids)).distinct().limit(20).all()
     return render_template('suggestions.html', suggested_users=suggested_users)
 
-@app.route('/chat/<int:conversation_id>/info')
-@login_required
-def chat_info(conversation_id):
-    convo = db.get_or_404(Conversation, conversation_id)
-    # Ensure user is a participant
-    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
-    if not participant:
-        return "Not your conversation", 403
+@app.context_processor
+def inject_datetime():
+    return {'datetime': datetime, 'timezone': timezone}
 
-    other_user = None
-    if not convo.is_group:
-        other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
-
-    return render_template('chat_info.html', conversation=convo, other_user=other_user)
+@app.context_processor
+def inject_models():
+    return dict(Comment=Comment)
 
 @app.route('/chat/<int:conversation_id>')
 @login_required
@@ -694,59 +636,6 @@ def message_thread(conversation_id):
     other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
     other_participant = next((p for p in convo.participants if p.user_id != g.user.id), None)
     return render_template('message_thread.html', conversation=convo, messages=messages, other_user=other_user, other_participant=other_participant)
-
-@app.route('/chat/new')
-@login_required
-def new_chat():
-    users = User.query.filter(User.id != g.user.id).order_by(User.full_name).all()
-    return render_template('new_chat.html', users=users)
-
-@app.route('/chat/create_group', methods=['GET', 'POST'])
-@login_required
-def create_group():
-    if request.method == 'POST':
-        group_name = request.form.get('group_name')
-        member_ids = request.form.getlist('members')
-
-        if not group_name or not member_ids:
-            flash('Group name and members are required.', 'error')
-            return redirect(url_for('create_group'))
-
-        # Create the new group conversation
-        new_convo = Conversation(
-            name=group_name,
-            is_group=True
-        )
-
-        # Handle group photo upload
-        if 'group_photo' in request.files:
-            file = request.files['group_photo']
-            if file.filename != '':
-                filename = secure_filename(file.filename)
-                # Use a different folder for group photos
-                group_photos_dir = os.path.join(app.static_folder, 'group_photos')
-                os.makedirs(group_photos_dir, exist_ok=True)
-                unique_filename = f"group_{int(datetime.now(timezone.utc).timestamp())}_{filename}"
-                file_path = os.path.join(group_photos_dir, unique_filename)
-                file.save(file_path)
-                new_convo.group_photo_path = os.path.join('group_photos', unique_filename)
-
-        db.session.add(new_convo)
-        db.session.commit()
-
-        # Add current user and selected members as participants
-        all_member_ids = [g.user.id] + [int(id) for id in member_ids]
-        for user_id in all_member_ids:
-            participant = Participant(user_id=user_id, conversation_id=new_convo.id, status='active')
-            db.session.add(participant)
-
-        db.session.commit()
-        flash('Group created successfully!', 'success')
-        return redirect(url_for('message_thread', conversation_id=new_convo.id))
-
-    # For GET request
-    users = User.query.filter(User.id != g.user.id).order_by(User.full_name).all()
-    return render_template('create_group.html', users=users)
 
 @app.route('/chat/start/<int:user_id>')
 @login_required
@@ -818,6 +707,116 @@ def block_user_in_chat(user_id):
         flash(f'You have blocked messages from {other_user.username}.', 'success')
     return redirect(url_for('chat_inbox'))
 
+@app.route('/chat')
+@login_required
+def chat_inbox():
+    user_participant_entries = Participant.query.filter_by(user_id=g.user.id).all()
+    active_chats = []
+    message_requests = []
+    for p_entry in user_participant_entries:
+        if p_entry.status == 'active':
+            active_chats.append(p_entry)
+        elif p_entry.status == 'pending':
+            message_requests.append(p_entry)
+    return render_template('chat_inbox.html', active_chats=active_chats, message_requests=message_requests, Message=Message)
+
+@app.route('/reels')
+@login_required
+def reels():
+    video_posts = Post.query.filter_by(content_type='video').order_by(Post.created_at.desc()).all()
+    return render_template('reels.html', posts=video_posts)
+
+@app.route('/modes/my')
+@login_required
+def my_modes():
+    """Displays the modes the current user has selected."""
+    user_modes = g.user.preferred_modes
+    return render_template('my_modes.html', modes=user_modes)
+
+@app.route('/modes/discover')
+@login_required
+def discover_modes():
+    """Displays all available modes for users to browse."""
+    all_modes = Mode.query.order_by(Mode.name).all()
+    return render_template('discover_modes.html', modes=all_modes)
+
+@app.route('/story/<int:story_id>')
+@login_required
+def story_viewer(story_id):
+    story = db.get_or_404(Story, story_id)
+    # Optional: Add logic to ensure only followers can view, or that it hasn't expired.
+    # For now, we'll keep it simple.
+    return render_template('story_viewer.html', story=story)
+
+@app.route('/notifications')
+@login_required
+def notifications():
+    """Display a list of notifications for the user."""
+    active_filter = request.args.get('filter', None)
+
+    # Base query
+    query = Notification.query.options(
+        joinedload(Notification.sender),
+        joinedload(Notification.related_post)
+    ).filter_by(recipient_id=g.user.id)
+
+    # Apply filter if one is provided
+    if active_filter in ['like', 'follow']: # Add other types here as they are implemented
+        query = query.filter_by(type=active_filter)
+
+    user_notifications = query.order_by(Notification.created_at.desc()).all()
+
+    # The logic to mark all as read is removed from here.
+    # It will be handled by a separate route on a per-notification basis.
+    return render_template('notifications.html', notifications=user_notifications, active_filter=active_filter)
+
+@app.route('/post/<int:post_id>')
+@login_required
+def post_detail(post_id):
+    """Displays a single post in detail."""
+    post = db.get_or_404(Post, post_id)
+    comments = post.comments.order_by(Comment.created_at.asc()).all()
+    return render_template('post_detail.html', post=post, comments=comments)
+
+@app.route('/post/<int:post_id>/comment', methods=['POST'])
+@login_required
+def add_comment(post_id):
+    post = db.get_or_404(Post, post_id)
+    comment_text = request.form.get('comment_text')
+
+    if not comment_text:
+        flash('Comment cannot be empty.', 'error')
+        return redirect(url_for('post_detail', post_id=post.id))
+
+    comment = Comment(text=comment_text, user_id=g.user.id, post_id=post.id)
+    db.session.add(comment)
+
+    # Create a notification for the post author, but not if they are commenting on their own post
+    if post.author.id != g.user.id:
+        notification = Notification(
+            recipient_id=post.author.id,
+            sender_id=g.user.id,
+            type='comment',
+            related_id=post.id
+        )
+        db.session.add(notification)
+
+    db.session.commit()
+
+    flash('Your comment has been posted.', 'success')
+    return redirect(url_for('post_detail', post_id=post.id))
+
+@app.route('/notifications/read/<int:notification_id>', methods=['POST'])
+@login_required
+def mark_notification_as_read(notification_id):
+    notification = Notification.query.get_or_404(notification_id)
+    if notification.recipient_id != g.user.id:
+        return {'error': 'Forbidden'}, 403
+
+    notification.is_read = True
+    db.session.commit()
+    return {'success': True}, 200
+
 @app.route('/chat/message/<int:message_id>/react', methods=['POST'])
 @login_required
 def react_to_message(message_id):
@@ -861,321 +860,6 @@ def react_to_message(message_id):
         }, room=str(message.conversation.id))
         return {'status': 'added'}, 201
 
-def get_participant_or_404(conversation_id, user_id):
-    """Helper to get a participant entry or raise a 404."""
-    return Participant.query.filter_by(
-        conversation_id=conversation_id,
-        user_id=user_id
-    ).first_or_404()
-
-@app.route('/chat/conversation/<int:conversation_id>/pin', methods=['POST'])
-@login_required
-def pin_chat(conversation_id):
-    participant = get_participant_or_404(conversation_id, g.user.id)
-    participant.is_pinned = not participant.is_pinned
-    db.session.commit()
-    return {'status': 'success', 'is_pinned': participant.is_pinned}, 200
-
-@app.route('/chat/conversation/<int:conversation_id>/mute', methods=['POST'])
-@login_required
-def mute_chat(conversation_id):
-    participant = get_participant_or_404(conversation_id, g.user.id)
-    participant.is_muted = not participant.is_muted
-    db.session.commit()
-    return {'status': 'success', 'is_muted': participant.is_muted}, 200
-
-@app.route('/chat/conversation/<int:conversation_id>/archive', methods=['POST'])
-@login_required
-def archive_chat(conversation_id):
-    participant = get_participant_or_404(conversation_id, g.user.id)
-    participant.status = 'archived'
-    db.session.commit()
-    return {'status': 'success'}, 200
-
-@app.route('/chat/conversation/<int:conversation_id>/clear', methods=['POST'])
-@login_required
-def clear_chat(conversation_id):
-    # Ensure the user is part of the conversation
-    participant = get_participant_or_404(conversation_id, g.user.id)
-    # Delete all messages in the conversation
-    Message.query.filter_by(conversation_id=conversation_id).delete()
-    db.session.commit()
-    flash('Chat history has been cleared.', 'success')
-    return redirect(url_for('message_thread', conversation_id=conversation_id))
-
-@app.route('/users/<int:user_id>/block', methods=['POST'])
-@login_required
-def block_user(user_id):
-    if user_id == g.user.id:
-        return {'error': 'Cannot block yourself'}, 400
-
-    target_user = db.get_or_404(User, user_id)
-
-    existing_block = BlockedUser.query.filter_by(blocker_id=g.user.id, blocked_id=user_id).first()
-
-    if existing_block:
-        # Unblock the user
-        db.session.delete(existing_block)
-        db.session.commit()
-        return {'status': 'unblocked'}, 200
-    else:
-        # Block the user
-        new_block = BlockedUser(blocker_id=g.user.id, blocked_id=user_id)
-        db.session.add(new_block)
-        db.session.commit()
-        return {'status': 'blocked'}, 200
-
-@app.route('/report', methods=['POST'])
-@login_required
-def report():
-    data = request.get_json()
-    reported_user_id = data.get('reported_user_id')
-    reported_conversation_id = data.get('reported_conversation_id')
-    reason = data.get('reason')
-
-    if not reason:
-        return {'error': 'A reason is required for reporting.'}, 400
-    if not reported_user_id and not reported_conversation_id:
-        return {'error': 'A user or conversation must be reported.'}, 400
-
-    new_report = Report(
-        reporter_id=g.user.id,
-        reported_user_id=reported_user_id,
-        reported_conversation_id=reported_conversation_id,
-        reason=reason
-    )
-    db.session.add(new_report)
-    db.session.commit()
-
-    return {'status': 'success', 'message': 'Report submitted successfully.'}, 201
-
-@app.route('/chat')
-@login_required
-def chat_inbox():
-    user_participant_entries = Participant.query.filter_by(user_id=g.user.id).order_by(
-        Participant.is_pinned.desc(),
-    ).all()
-
-    active_chats = [p for p in user_participant_entries if p.status == 'active']
-    message_requests = [p for p in user_participant_entries if p.status == 'pending']
-    archived_chats = [p for p in user_participant_entries if p.status == 'archived']
-
-    # Further sort active chats by last message time (if available)
-    def get_last_message_time(p):
-        last_msg = p.conversation.messages.order_by(Message.created_at.desc()).first()
-        return last_msg.created_at if last_msg else p.conversation.created_at
-
-    active_chats.sort(key=lambda p: (not p.is_pinned, get_last_message_time(p)), reverse=True)
-
-    return render_template(
-        'chat_inbox.html',
-        active_chats=active_chats,
-        message_requests=message_requests,
-        archived_chats=archived_chats,
-        Message=Message
-    )
-
-@app.route('/reels')
-@login_required
-def reels():
-    video_posts = Post.query.filter_by(content_type='video').order_by(Post.created_at.desc()).all()
-    return render_template('reels.html', posts=video_posts)
-
-@app.route('/modes/my')
-@login_required
-def my_modes():
-    """Displays the modes the current user has selected."""
-    user_modes = g.user.preferred_modes
-    return render_template('my_modes.html', modes=user_modes)
-
-@app.route('/modes/discover')
-@login_required
-def discover_modes():
-    """Displays all available modes for users to browse."""
-    all_modes = Mode.query.order_by(Mode.name).all()
-    return render_template('discover_modes.html', modes=all_modes)
-
-@app.route('/story/<int:story_id>')
-@login_required
-def story_viewer(story_id):
-    story = db.get_or_404(Story, story_id)
-    # Optional: Add logic to ensure only followers can view, or that it hasn't expired.
-    # For now, we'll keep it simple.
-    return render_template('story_viewer.html', story=story)
-
-@app.route('/notifications')
-@login_required
-def notifications():
-    """Display a list of notifications for the user."""
-    active_filter = request.args.get('filter', None)
-
-    # Base query
-    query = Notification.query.options(
-        joinedload(Notification.sender),
-        joinedload(Notification.related_post)
-    ).filter_by(recipient_id=g.user.id)
-
-    # Apply filter if one is provided
-    if active_filter in ['like', 'follow', 'comment', 'share']:
-        query = query.filter_by(type=active_filter)
-
-    user_notifications = query.order_by(Notification.created_at.desc()).all()
-
-    # The logic to mark all as read is removed from here.
-    # It will be handled by a separate route on a per-notification basis.
-    return render_template('notifications.html', notifications=user_notifications, active_filter=active_filter)
-
-@app.route('/post/<int:post_id>')
-@login_required
-def post_detail(post_id):
-    """Displays a single post in detail."""
-    post = db.get_or_404(Post, post_id)
-    # Pass the query object, not the executed list, to the template
-    comments = post.comments.order_by(Comment.created_at.asc())
-    return render_template('post_detail.html', post=post, comments=comments)
-
-@app.route('/post/<int:post_id>/comment', methods=['POST'])
-@login_required
-def add_comment(post_id):
-    post = db.get_or_404(Post, post_id)
-    comment_text = request.form.get('comment_text')
-    parent_id = request.form.get('parent_id')
-
-    if not comment_text:
-        flash('Comment cannot be empty.', 'error')
-        return redirect(url_for('post_detail', post_id=post.id))
-
-    comment = Comment(
-        text=comment_text,
-        user_id=g.user.id,
-        post_id=post.id,
-        parent_id=parent_id if parent_id else None
-    )
-    db.session.add(comment)
-
-    # Create a notification for the post author, but not if they are commenting on their own post
-    if post.author.id != g.user.id:
-        notification = Notification(
-            recipient_id=post.author.id,
-            sender_id=g.user.id,
-            type='comment',
-            related_id=post.id
-        )
-        db.session.add(notification)
-
-    db.session.commit()
-
-    flash('Your comment has been posted.', 'success')
-    return redirect(url_for('post_detail', post_id=post.id))
-
-@app.route('/comment/<int:comment_id>/react', methods=['POST'])
-@login_required
-def react_to_comment(comment_id):
-    comment = db.get_or_404(Comment, comment_id)
-    emoji = request.json.get('emoji', '👍') # Default to thumbs up
-
-    existing_reaction = CommentReaction.query.filter_by(
-        user_id=g.user.id,
-        comment_id=comment_id,
-        emoji=emoji
-    ).first()
-
-    if existing_reaction:
-        db.session.delete(existing_reaction)
-        db.session.commit()
-        return {'status': 'removed', 'count': len(comment.reactions)}, 200
-    else:
-        new_reaction = CommentReaction(user_id=g.user.id, comment_id=comment_id, emoji=emoji)
-        db.session.add(new_reaction)
-        db.session.commit()
-        return {'status': 'added', 'count': len(comment.reactions)}, 201
-
-@app.route('/comment/<int:comment_id>/edit', methods=['POST'])
-@login_required
-def edit_comment(comment_id):
-    comment = db.get_or_404(Comment, comment_id)
-    if comment.user_id != g.user.id:
-        return {'error': 'Forbidden'}, 403
-
-    new_text = request.form.get('text')
-    if not new_text:
-        return {'error': 'Comment text cannot be empty'}, 400
-
-    comment.text = new_text
-    db.session.commit()
-    return {'status': 'success', 'new_text': new_text}
-
-@app.route('/comment/<int:comment_id>/delete', methods=['POST'])
-@login_required
-def delete_comment(comment_id):
-    comment = db.get_or_404(Comment, comment_id)
-    if comment.user_id != g.user.id:
-        # Or if the user is an admin/moderator
-        return {'error': 'Forbidden'}, 403
-
-    # Must also delete replies recursively
-    def delete_replies(c):
-        for reply in c.replies:
-            delete_replies(reply)
-        db.session.delete(c)
-
-    delete_replies(comment)
-    db.session.commit()
-    return {'status': 'success'}
-
-@app.route('/post/<int:post_id>/share', methods=['POST'])
-@login_required
-def share_post(post_id):
-    original_post = db.get_or_404(Post, post_id)
-    quote_text = request.form.get('quote_text', None) # Optional text from the user
-
-    # Prevent sharing a repost
-    if original_post.original_post_id:
-        flash('You cannot share a post that is already a share.', 'error')
-        return redirect(request.referrer or url_for('home'))
-
-    # Create the new post (the share/repost)
-    new_post = Post(
-        user_id=g.user.id,
-        text=quote_text, # This will be the user's quote
-        original_post_id=original_post.id,
-        # Copy relevant fields from the original post
-        content_type=original_post.content_type,
-        content_path=original_post.content_path,
-        mode=original_post.mode
-    )
-
-    # Increment the share count on the original post
-    original_post.share_count += 1
-
-    db.session.add(new_post)
-
-    # Create a notification for the original author
-    if original_post.author.id != g.user.id:
-        notification = Notification(
-            recipient_id=original_post.author.id,
-            sender_id=g.user.id,
-            type='share',
-            related_id=original_post.id
-        )
-        db.session.add(notification)
-
-    db.session.commit()
-
-    flash('Post shared successfully!', 'success')
-    return redirect(url_for('home'))
-
-@app.route('/notifications/read/<int:notification_id>', methods=['POST'])
-@login_required
-def mark_notification_as_read(notification_id):
-    notification = Notification.query.get_or_404(notification_id)
-    if notification.recipient_id != g.user.id:
-        return {'error': 'Forbidden'}, 403
-
-    notification.is_read = True
-    db.session.commit()
-    return {'success': True}, 200
-
 # --- SOCKETIO EVENTS ---
 @socketio.on('send_message')
 def handle_send_message_event(data):
@@ -1186,16 +870,33 @@ def handle_send_message_event(data):
     participant_users = [p.user for p in convo.participants]
     if user not in participant_users:
         return
-    new_message = Message(conversation_id=data['room'], user_id=user_id, body=data['message'])
+
+    parent_id = data.get('parent_id')
+
+    new_message = Message(
+        conversation_id=data['room'],
+        user_id=user_id,
+        body=data['message'],
+        parent_id=parent_id
+    )
     db.session.add(new_message)
     db.session.commit()
+
+    parent_message_data = None
+    if new_message.parent:
+        parent_message_data = {
+            'body': new_message.parent.body,
+            'author_name': new_message.parent.sender.full_name
+        }
+
     message_data = {
         'id': new_message.id,
         'body': new_message.body,
         'author_name': new_message.sender.full_name,
         'author_username': new_message.sender.username,
         'user_id': new_message.user_id,
-        'created_at': new_message.created_at.isoformat()
+        'created_at': new_message.created_at.isoformat(),
+        'parent': parent_message_data
     }
     emit('new_message', message_data, room=data['room'])
 
