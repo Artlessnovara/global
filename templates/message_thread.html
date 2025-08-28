@@ -5,15 +5,16 @@
 {% block content %}
 <div class="message-thread-container">
     <div class="thread-header">
-        {% if other_user %}
+    {% if conversation.is_group %}
+        <a href="{{ url_for('group_info', conversation_id=conversation.id) }}" class="thread-header-user">
+            <img src="{{ url_for('static', filename=conversation.group_photo_path or 'img/default_group.png') }}" alt="{{ conversation.name }}'s photo" class="chat-avatar">
+            <span>{{ conversation.name }}</span>
+        </a>
+    {% elif other_user %}
             <a href="{{ url_for('profile', username=other_user.username) }}" class="thread-header-user">
                 <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
                 <span>{{ other_user.full_name }}</span>
             </a>
-        {% else %}
-             <div class="thread-header-user">
-                <span>Group Chat</span>
-            </div>
         {% endif %}
     </div>
     <div class="message-list">
