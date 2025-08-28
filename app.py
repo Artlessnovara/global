@@ -45,11 +45,6 @@ close_friends = db.Table('close_friends',
     db.Column('close_friend_id', db.Integer, db.ForeignKey('users.id'), primary_key=True)
 )
 
-message_user_deletions = db.Table('message_user_deletions',
-    db.Column('message_id', db.Integer, db.ForeignKey('messages.id'), primary_key=True),
-    db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True)
-)
-
 # --- DATABASE MODELS ---
 class User(db.Model):
     __tablename__ = 'users'
@@ -172,13 +167,22 @@ class Participant(db.Model):
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
     last_read_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     status = db.Column(db.String(20), default='active', nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='member') # 'admin' or 'member'
     user = db.relationship('User', back_populates='conversations')
     conversation = db.relationship('Conversation', back_populates='participants')
+
+import secrets
 
 class Conversation(db.Model):
     __tablename__ = 'conversations'
     id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    is_group = db.Column(db.Boolean, default=False, nullable=False)
+    name = db.Column(db.String(150), nullable=True)
+    description = db.Column(db.Text, nullable=True)
+    group_photo_path = db.Column(db.String(255), nullable=True)
+    invite_code = db.Column(db.String(16), unique=True, default=lambda: secrets.token_urlsafe(12))
+    is_invite_link_enabled = db.Column(db.Boolean, default=True)
     messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade="all, delete-orphan")
     participants = db.relationship('Participant', back_populates='conversation', cascade="all, delete-orphan")
 
@@ -196,13 +200,6 @@ class Message(db.Model):
     body = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     sender = db.relationship('User')
-
-    deleted_by = db.relationship(
-        'User',
-        secondary=message_user_deletions,
-        lazy='subquery',
-        backref=db.backref('deleted_messages', lazy=True)
-    )
 
 class Notification(db.Model):
     __tablename__ = 'notifications'
@@ -615,13 +612,7 @@ def message_thread(conversation_id):
     if participant:
         participant.last_read_at = datetime.now(timezone.utc)
         db.session.commit()
-
-    # Subquery to get IDs of messages deleted by the current user
-    deleted_message_ids = db.session.query(message_user_deletions.c.message_id).filter_by(user_id=g.user.id).subquery()
-
-    # Fetch messages that are not in the deleted list for the current user
-    messages = convo.messages.filter(Message.id.notin_(deleted_message_ids)).order_by(Message.created_at.asc()).all()
-
+    messages = convo.messages.order_by(Message.created_at.asc()).all()
     other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
     return render_template('message_thread.html', conversation=convo, messages=messages, other_user=other_user)
 
@@ -676,6 +667,145 @@ def delete_chat(conversation_id):
     db.session.commit()
     flash('Conversation deleted.', 'success')
     return redirect(url_for('chat_inbox'))
+
+@app.route('/chat/group/<int:conversation_id>/update', methods=['POST'])
+@login_required
+def update_group_info(conversation_id):
+    conversation = db.get_or_404(Conversation, conversation_id)
+    participant = next((p for p in conversation.participants if p.user_id == g.user.id), None)
+    if not participant or participant.role != 'admin':
+        return "You are not an admin of this group.", 403
+
+    name = request.form.get('name')
+    description = request.form.get('description')
+    photo = request.files.get('photo')
+
+    if name:
+        conversation.name = name
+    if description:
+        conversation.description = description
+
+    if photo:
+        filename = secure_filename(photo.filename)
+        photo_path = os.path.join('group_photos', f"{conversation.id}_{filename}")
+        full_path = os.path.join(app.static_folder, photo_path)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        photo.save(full_path)
+        conversation.group_photo_path = photo_path
+
+    db.session.commit()
+    flash('Group info updated successfully.', 'success')
+    return redirect(url_for('group_info', conversation_id=conversation.id))
+
+@app.route('/chat/group/<int:conversation_id>/toggle_invite', methods=['POST'])
+@login_required
+def toggle_invite_link(conversation_id):
+    conversation = db.get_or_404(Conversation, conversation_id)
+    participant = next((p for p in conversation.participants if p.user_id == g.user.id), None)
+    if not participant or participant.role != 'admin':
+        return {'error': 'Forbidden'}, 403
+
+    conversation.is_invite_link_enabled = not conversation.is_invite_link_enabled
+    db.session.commit()
+
+    new_status = 'Enabled' if conversation.is_invite_link_enabled else 'Disabled'
+    return {'success': True, 'status': new_status, 'isEnabled': conversation.is_invite_link_enabled}
+
+@app.route('/join/<invite_code>')
+@login_required
+def join_group_with_invite(invite_code):
+    conversation = Conversation.query.filter_by(invite_code=invite_code, is_invite_link_enabled=True).first()
+    if not conversation:
+        flash('Invalid or expired invite link.', 'error')
+        return redirect(url_for('home'))
+
+    existing_participant = next((p for p in conversation.participants if p.user_id == g.user.id), None)
+    if existing_participant:
+        flash('You are already a member of this group.', 'info')
+        return redirect(url_for('message_thread', conversation_id=conversation.id))
+
+    new_participant = Participant(user_id=g.user.id, conversation_id=conversation.id, role='member')
+    db.session.add(new_participant)
+    db.session.commit()
+
+    flash('You have successfully joined the group!', 'success')
+    return redirect(url_for('message_thread', conversation_id=conversation.id))
+
+
+@app.route('/chat/group/<int:conversation_id>/add_members', methods=['GET', 'POST'])
+@login_required
+def add_members(conversation_id):
+    conversation = db.get_or_404(Conversation, conversation_id)
+    participant = next((p for p in conversation.participants if p.user_id == g.user.id), None)
+    if not participant or participant.role != 'admin':
+        return "You are not an admin of this group.", 403
+
+    if request.method == 'POST':
+        users_to_add = request.form.getlist('users')
+        for user_id in users_to_add:
+            user = db.get_or_404(User, user_id)
+            existing_participant = next((p for p in conversation.participants if p.user_id == user.id), None)
+            if not existing_participant:
+                new_participant = Participant(user_id=user.id, conversation_id=conversation.id)
+                db.session.add(new_participant)
+        db.session.commit()
+        flash('Members added successfully.', 'success')
+        return redirect(url_for('group_info', conversation_id=conversation.id))
+
+    existing_member_ids = [p.user_id for p in conversation.participants]
+    users = User.query.filter(User.id.notin_(existing_member_ids)).all()
+    return render_template('add_members.html', conversation=conversation, users=users)
+
+@app.route('/chat/group/<int:conversation_id>/remove_member/<int:user_id>', methods=['POST'])
+@login_required
+def remove_member(conversation_id, user_id):
+    conversation = db.get_or_404(Conversation, conversation_id)
+    admin_participant = next((p for p in conversation.participants if p.user_id == g.user.id), None)
+    if not admin_participant or admin_participant.role != 'admin':
+        return "You are not an admin of this group.", 403
+
+    member_to_remove = next((p for p in conversation.participants if p.user_id == user_id), None)
+    if member_to_remove:
+        db.session.delete(member_to_remove)
+        db.session.commit()
+        flash('Member removed successfully.', 'success')
+    else:
+        flash('Member not found in this group.', 'error')
+
+    return redirect(url_for('group_info', conversation_id=conversation.id))
+
+@app.route('/chat/group/<int:conversation_id>/update_role/<int:user_id>', methods=['POST'])
+@login_required
+def update_role(conversation_id, user_id):
+    conversation = db.get_or_404(Conversation, conversation_id)
+    admin_participant = next((p for p in conversation.participants if p.user_id == g.user.id), None)
+    if not admin_participant or admin_participant.role != 'admin':
+        return "You are not an admin of this group.", 403
+
+    member_to_update = next((p for p in conversation.participants if p.user_id == user_id), None)
+    if member_to_update:
+        new_role = request.form.get('role')
+        if new_role in ['admin', 'member']:
+            member_to_update.role = new_role
+            db.session.commit()
+            flash('Member role updated successfully.', 'success')
+        else:
+            flash('Invalid role specified.', 'error')
+    else:
+        flash('Member not found in this group.', 'error')
+
+    return redirect(url_for('group_info', conversation_id=conversation.id))
+
+
+@app.route('/chat/group/<int:conversation_id>/info')
+@login_required
+def group_info(conversation_id):
+    conversation = db.get_or_404(Conversation, conversation_id)
+    participant = next((p for p in conversation.participants if p.user_id == g.user.id), None)
+    if not participant or not conversation.is_group:
+        return "Group not found or you're not a member.", 404
+    return render_template('group_info.html', conversation=conversation)
+
 
 @app.route('/chat/block/<int:user_id>')
 @login_required
@@ -830,26 +960,6 @@ def on_join(data):
 def on_leave(data):
     room = data['room']
     leave_room(room)
-
-@app.route('/chat/message/<int:message_id>/delete_for_me', methods=['POST'])
-@login_required
-def delete_message_for_me(message_id):
-    message = db.get_or_404(Message, message_id)
-    if g.user not in message.deleted_by:
-        message.deleted_by.append(g.user)
-        db.session.commit()
-    return {'success': True}
-
-@app.route('/chat/message/<int:message_id>/delete', methods=['POST'])
-@login_required
-def delete_message(message_id):
-    message = db.get_or_404(Message, message_id)
-    if message.user_id != g.user.id:
-        return {'error': 'Forbidden'}, 403
-    db.session.delete(message)
-    db.session.commit()
-    socketio.emit('message_deleted', {'message_id': message_id}, room=str(message.conversation_id))
-    return {'success': True}
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)

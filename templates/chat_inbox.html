@@ -11,7 +11,7 @@
 
     <div class="profile-nav-tabs">
         <button class="tab-link active" onclick="openTab(event, 'recent')">Recent</button>
-<button class="tab-link" onclick="openTab(event, 'requests')">Requests {% if message_requests|length > 0 %}({{ message_requests|length }}){% endif %}</button>
+    <button class="tab-link" onclick="openTab(event, 'requests')">Requests {% if message_requests|length > 0 %}({{ message_requests|length }}){% endif %}</button>
     </div>
 
     <div id="recent" class="tab-content" style="display: block;">
