@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Group Info - {{ conversation.name }}{% endblock %}
+
+{% block content %}
+<div class="group-info-container">
+    <div class="group-header">
+        <img src="{{ url_for('static', filename=conversation.group_photo_path or 'img/default_group.png') }}" alt="{{ conversation.name }}'s photo" class="group-photo">
+        <h1>{{ conversation.name }}</h1>
+        <p>{{ conversation.description }}</p>
+    </div>
+
+    {% set current_participant = conversation.participants|selectattr('user_id', 'equalto', g.user.id)|first %}
+    {% if current_participant and current_participant.role == 'admin' %}
+    <div class="admin-controls">
+        <div class="admin-section">
+            <button id="edit-group-btn" class="btn-profile-action">Edit Group</button>
+            <form id="edit-group-form" action="{{ url_for('update_group_info', conversation_id=conversation.id) }}" method="POST" enctype="multipart/form-data" style="display: none; margin-top: 15px;">
+                <div class="form-group">
+                    <label for="name">Group Name</label>
+                    <input type="text" name="name" value="{{ conversation.name }}" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="description">Description</label>
+                    <textarea name="description" class="form-control">{{ conversation.description }}</textarea>
+                </div>
+                <div class="form-group">
+                    <label for="photo">Group Photo</label>
+                    <input type="file" name="photo" class="form-control">
+                </div>
+                <button type="submit" class="btn-save-settings">Save Changes</button>
+            </form>
+        </div>
+
+        <div class="admin-section">
+            <h3>Invite Link</h3>
+            <div class="invite-link-controls">
+                <span>Enable Invite Link</span>
+                <label class="switch">
+                    <input type="checkbox" id="toggle-invite-link" {% if conversation.is_invite_link_enabled %}checked{% endif %}>
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div id="invite-link-container" style="display: {% if conversation.is_invite_link_enabled %}flex{% else %}none{% endif %};">
+                <input type="text" value="{{ url_for('join_group_with_invite', invite_code=conversation.invite_code, _external=True) }}" id="invite-link-input" readonly>
+                <button id="copy-invite-link-btn" class="btn-profile-action">Copy</button>
+            </div>
+        </div>
+
+        <div class="admin-section">
+            <a href="{{ url_for('add_members', conversation_id=conversation.id) }}" class="btn-profile-action">Add Members</a>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="member-list">
+        <h2>Members ({{ conversation.participants|length }})</h2>
+        <ul>
+            {% for p in conversation.participants %}
+            <li>
+                <img src="https://i.pravatar.cc/150?u={{ p.user.username }}" alt="{{ p.user.username }}'s avatar" class="member-avatar">
+                <div class="member-info">
+                    <span class="member-name">{{ p.user.full_name }}</span>
+                    <span class="member-role">{{ p.role|capitalize }}</span>
+                </div>
+                <div class="member-actions">
+                    {% if current_participant.role == 'admin' and p.user_id != g.user.id %}
+                    <form action="{{ url_for('update_role', conversation_id=conversation.id, user_id=p.user_id) }}" method="POST" style="display: inline;">
+                        <select name="role" onchange="this.form.submit()">
+                            <option value="member" {% if p.role == 'member' %}selected{% endif %}>Member</option>
+                            <option value="admin" {% if p.role == 'admin' %}selected{% endif %}>Admin</option>
+                        </select>
+                    </form>
+                    <form action="{{ url_for('remove_member', conversation_id=conversation.id, user_id=p.user_id) }}" method="POST" style="display: inline;">
+                        <button type="submit" class="btn-remove-member">Remove</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const editBtn = document.getElementById('edit-group-btn');
+    const editForm = document.getElementById('edit-group-form');
+    if (editBtn) {
+        editBtn.addEventListener('click', function() {
+            if (editForm.style.display === 'none') {
+                editForm.style.display = 'block';
+                editBtn.textContent = 'Cancel';
+            } else {
+                editForm.style.display = 'none';
+                editBtn.textContent = 'Edit Group';
+            }
+        });
+    }
+
+    const toggleSwitch = document.getElementById('toggle-invite-link');
+    const linkContainer = document.getElementById('invite-link-container');
+    if (toggleSwitch) {
+        toggleSwitch.addEventListener('change', function() {
+            fetch(`/chat/group/{{ conversation.id }}/toggle_invite`, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    linkContainer.style.display = data.isEnabled ? 'flex' : 'none';
+                }
+            });
+        });
+    }
+
+    const copyBtn = document.getElementById('copy-invite-link-btn');
+    const linkInput = document.getElementById('invite-link-input');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', function() {
+            linkInput.select();
+            document.execCommand('copy');
+            copyBtn.textContent = 'Copied!';
+            setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+        });
+    }
+});
+</script>
+{% endblock %}
