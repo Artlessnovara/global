@@ -160,16 +160,6 @@ class Mode(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), unique=True, nullable=False)
 
-class Participant(db.Model):
-    __tablename__ = 'participants'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
-    last_read_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    status = db.Column(db.String(20), default='active', nullable=False)
-    user = db.relationship('User', back_populates='conversations')
-    conversation = db.relationship('Conversation', back_populates='participants')
-
 class Conversation(db.Model):
     __tablename__ = 'conversations'
     id = db.Column(db.Integer, primary_key=True)
@@ -191,6 +181,27 @@ class Message(db.Model):
     body = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     sender = db.relationship('User')
+    reactions = db.relationship('MessageReaction', backref='message', cascade="all, delete-orphan")
+
+class MessageReaction(db.Model):
+    __tablename__ = 'message_reactions'
+    id = db.Column(db.Integer, primary_key=True)
+    message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    emoji = db.Column(db.String(50), nullable=False)
+    user = db.relationship('User')
+    __table_args__ = (db.UniqueConstraint('message_id', 'user_id', 'emoji', name='_message_user_emoji_uc'),)
+
+class Participant(db.Model):
+    __tablename__ = 'participants'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
+    last_read_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    status = db.Column(db.String(20), default='active', nullable=False)
+    last_seen_message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=True)
+    user = db.relationship('User', back_populates='conversations')
+    conversation = db.relationship('Conversation', back_populates='participants')
 
 class Notification(db.Model):
     __tablename__ = 'notifications'
@@ -603,9 +614,12 @@ def message_thread(conversation_id):
     if participant:
         participant.last_read_at = datetime.now(timezone.utc)
         db.session.commit()
-    messages = convo.messages.order_by(Message.created_at.asc()).all()
+    messages = convo.messages.options(
+        joinedload(Message.reactions).joinedload(MessageReaction.user)
+    ).order_by(Message.created_at.asc()).all()
     other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
-    return render_template('message_thread.html', conversation=convo, messages=messages, other_user=other_user)
+    other_participant = next((p for p in convo.participants if p.user_id != g.user.id), None)
+    return render_template('message_thread.html', conversation=convo, messages=messages, other_user=other_user, other_participant=other_participant)
 
 @app.route('/chat/start/<int:user_id>')
 @login_required
@@ -676,6 +690,49 @@ def block_user_in_chat(user_id):
         db.session.commit()
         flash(f'You have blocked messages from {other_user.username}.', 'success')
     return redirect(url_for('chat_inbox'))
+
+@app.route('/chat/message/<int:message_id>/react', methods=['POST'])
+@login_required
+def react_to_message(message_id):
+    message = db.get_or_404(Message, message_id)
+    participant = next((p for p in message.conversation.participants if p.user_id == g.user.id), None)
+    if not participant:
+        return {'error': 'Forbidden'}, 403
+
+    emoji = request.json.get('emoji')
+    if not emoji:
+        return {'error': 'Emoji is required'}, 400
+
+    existing_reaction = MessageReaction.query.filter_by(
+        message_id=message_id,
+        user_id=g.user.id,
+        emoji=emoji
+    ).first()
+
+    if existing_reaction:
+        db.session.delete(existing_reaction)
+        db.session.commit()
+        socketio.emit('reaction_removed', {
+            'message_id': message_id,
+            'user_id': g.user.id,
+            'emoji': emoji
+        }, room=str(message.conversation.id))
+        return {'status': 'removed'}, 200
+    else:
+        new_reaction = MessageReaction(
+            message_id=message_id,
+            user_id=g.user.id,
+            emoji=emoji
+        )
+        db.session.add(new_reaction)
+        db.session.commit()
+        socketio.emit('reaction_added', {
+            'message_id': message_id,
+            'user_id': g.user.id,
+            'username': g.user.username,
+            'emoji': emoji
+        }, room=str(message.conversation.id))
+        return {'status': 'added'}, 201
 
 @app.route('/chat')
 @login_required
@@ -800,18 +857,61 @@ def handle_send_message_event(data):
     new_message = Message(conversation_id=data['room'], user_id=user_id, body=data['message'])
     db.session.add(new_message)
     db.session.commit()
-    message_data = {'body': new_message.body, 'author_name': new_message.sender.full_name, 'author_username': new_message.sender.username, 'user_id': new_message.user_id}
+    message_data = {
+        'id': new_message.id,
+        'body': new_message.body,
+        'author_name': new_message.sender.full_name,
+        'author_username': new_message.sender.username,
+        'user_id': new_message.user_id,
+        'created_at': new_message.created_at.isoformat()
+    }
     emit('new_message', message_data, room=data['room'])
 
 @socketio.on('join')
 def on_join(data):
+    user_id = session.get('user_id')
+    if not user_id: return
     room = data['room']
     join_room(room)
+    emit('user_stopped_typing', {'user_id': user_id}, room=room, include_self=False)
 
 @socketio.on('leave')
 def on_leave(data):
+    user_id = session.get('user_id')
+    if not user_id: return
     room = data['room']
     leave_room(room)
+    emit('user_stopped_typing', {'user_id': user_id}, room=room, include_self=False)
+
+@socketio.on('typing_start')
+def handle_typing_start(data):
+    user_id = session.get('user_id')
+    if not user_id: return
+    user = db.session.get(User, user_id)
+    if not user: return
+    room = data['room']
+    emit('user_typing', {'user_id': user.id, 'username': user.username}, room=room, include_self=False)
+
+@socketio.on('typing_stop')
+def handle_typing_stop(data):
+    user_id = session.get('user_id')
+    if not user_id: return
+    room = data['room']
+    emit('user_stopped_typing', {'user_id': user_id}, room=room, include_self=False)
+
+@socketio.on('message_seen')
+def handle_message_seen(data):
+    user_id = session.get('user_id')
+    if not user_id: return
+    conversation_id = data['room']
+    message_id = data['message_id']
+
+    participant = Participant.query.filter_by(user_id=user_id, conversation_id=conversation_id).first()
+    if participant:
+        if not participant.last_seen_message_id or message_id > participant.last_seen_message_id:
+            participant.last_seen_message_id = message_id
+            db.session.commit()
+            emit('message_was_seen', {'message_id': message_id, 'user_id': user_id}, room=str(conversation_id), include_self=False)
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)
