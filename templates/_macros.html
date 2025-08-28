@@ -1,0 +1,39 @@
+{% macro render_comment(comment, post_id) %}
+<li class="comment-item" id="comment-{{ comment.id }}">
+    <a href="{{ url_for('profile', username=comment.author.username) }}">
+        <img src="https://i.pravatar.cc/150?u={{ comment.author.username }}" alt="{{ comment.author.username }}'s avatar" class="comment-avatar">
+    </a>
+    <div class="comment-content">
+        <p class="comment-text">
+            <a href="{{ url_for('profile', username=comment.author.username) }}" class="comment-author-name">{{ comment.author.username }}</a>
+            {{ comment.text }}
+        </p>
+        <div class="comment-meta">
+            <span>{{ comment.created_at|humanize_time }}</span>
+            <a href="#" class="reaction-btn" data-comment-id="{{ comment.id }}">Like</a>
+            <a href="#" class="reply-btn" data-comment-id="{{ comment.id }}">Reply</a>
+            {% if comment.user_id == g.user.id %}
+                <a href="#">Edit</a>
+                <a href="#">Delete</a>
+            {% endif %}
+        </div>
+
+        <!-- Hidden Reply Form -->
+        <div class="reply-form" id="reply-form-{{ comment.id }}">
+            <form method="POST" action="{{ url_for('add_comment', post_id=post_id) }}">
+                <input type="hidden" name="parent_id" value="{{ comment.id }}">
+                <textarea name="comment_text" placeholder="Write a reply..." required></textarea>
+                <button type="submit">Reply</button>
+            </form>
+        </div>
+
+        {% if comment.replies %}
+            <ul class="comment-thread comment-replies">
+                {% for reply in comment.replies %}
+                    {{ render_comment(reply, post_id) }}
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+</li>
+{% endmacro %}

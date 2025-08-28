@@ -142,6 +142,21 @@ class Comment(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=False)
 
+    # Self-referential relationship for threaded comments
+    parent_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=True)
+    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
+    reactions = db.relationship('CommentReaction', backref='comment', cascade="all, delete-orphan")
+
+class CommentReaction(db.Model):
+    __tablename__ = 'comment_reactions'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    comment_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=False)
+    emoji = db.Column(db.String(50), nullable=False)
+
+    user = db.relationship('User')
+    __table_args__ = (db.UniqueConstraint('user_id', 'comment_id', 'emoji', name='_user_comment_emoji_uc'),)
+
 class Story(db.Model):
     __tablename__ = 'stories'
     id = db.Column(db.Integer, primary_key=True)
@@ -1005,7 +1020,8 @@ def notifications():
 def post_detail(post_id):
     """Displays a single post in detail."""
     post = db.get_or_404(Post, post_id)
-    comments = post.comments.order_by(Comment.created_at.asc()).all()
+    # Pass the query object, not the executed list, to the template
+    comments = post.comments.order_by(Comment.created_at.asc())
     return render_template('post_detail.html', post=post, comments=comments)
 
 @app.route('/post/<int:post_id>/comment', methods=['POST'])
@@ -1013,12 +1029,18 @@ def post_detail(post_id):
 def add_comment(post_id):
     post = db.get_or_404(Post, post_id)
     comment_text = request.form.get('comment_text')
+    parent_id = request.form.get('parent_id')
 
     if not comment_text:
         flash('Comment cannot be empty.', 'error')
         return redirect(url_for('post_detail', post_id=post.id))
 
-    comment = Comment(text=comment_text, user_id=g.user.id, post_id=post.id)
+    comment = Comment(
+        text=comment_text,
+        user_id=g.user.id,
+        post_id=post.id,
+        parent_id=parent_id if parent_id else None
+    )
     db.session.add(comment)
 
     # Create a notification for the post author, but not if they are commenting on their own post
@@ -1035,6 +1057,61 @@ def add_comment(post_id):
 
     flash('Your comment has been posted.', 'success')
     return redirect(url_for('post_detail', post_id=post.id))
+
+@app.route('/comment/<int:comment_id>/react', methods=['POST'])
+@login_required
+def react_to_comment(comment_id):
+    comment = db.get_or_404(Comment, comment_id)
+    emoji = request.json.get('emoji', '👍') # Default to thumbs up
+
+    existing_reaction = CommentReaction.query.filter_by(
+        user_id=g.user.id,
+        comment_id=comment_id,
+        emoji=emoji
+    ).first()
+
+    if existing_reaction:
+        db.session.delete(existing_reaction)
+        db.session.commit()
+        return {'status': 'removed', 'count': len(comment.reactions)}, 200
+    else:
+        new_reaction = CommentReaction(user_id=g.user.id, comment_id=comment_id, emoji=emoji)
+        db.session.add(new_reaction)
+        db.session.commit()
+        return {'status': 'added', 'count': len(comment.reactions)}, 201
+
+@app.route('/comment/<int:comment_id>/edit', methods=['POST'])
+@login_required
+def edit_comment(comment_id):
+    comment = db.get_or_404(Comment, comment_id)
+    if comment.user_id != g.user.id:
+        return {'error': 'Forbidden'}, 403
+
+    new_text = request.form.get('text')
+    if not new_text:
+        return {'error': 'Comment text cannot be empty'}, 400
+
+    comment.text = new_text
+    db.session.commit()
+    return {'status': 'success', 'new_text': new_text}
+
+@app.route('/comment/<int:comment_id>/delete', methods=['POST'])
+@login_required
+def delete_comment(comment_id):
+    comment = db.get_or_404(Comment, comment_id)
+    if comment.user_id != g.user.id:
+        # Or if the user is an admin/moderator
+        return {'error': 'Forbidden'}, 403
+
+    # Must also delete replies recursively
+    def delete_replies(c):
+        for reply in c.replies:
+            delete_replies(reply)
+        db.session.delete(c)
+
+    delete_replies(comment)
+    db.session.commit()
+    return {'status': 'success'}
 
 @app.route('/notifications/read/<int:notification_id>', methods=['POST'])
 @login_required
