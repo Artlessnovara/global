@@ -11,93 +11,80 @@
 
 {% block head %}
 <style>
-    .reactions-popup {
-        display: none;
-        position: absolute;
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        background-color: #fff;
-        border: 1px solid #ddd;
-        border-radius: 20px;
-        padding: 5px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        z-index: 100;
-        margin-bottom: 5px;
-    }
-    .reactions-popup span {
-        cursor: pointer;
-        padding: 5px;
-        font-size: 1.2em;
-        transition: transform 0.2s;
-    }
-    .reactions-popup span:hover {
-        transform: scale(1.2);
-    }
-    .message-bubble-container {
-        position: relative;
-        margin-bottom: 20px; /* Space for meta content */
-    }
-    .message-meta {
-        display: flex;
-        align-items: center;
-        height: 15px;
-        margin-top: 4px;
-        position: absolute;
-        bottom: -20px;
-    }
-    .sent .message-meta {
-        right: 10px;
-        justify-content: flex-end;
-    }
-    .received .message-meta {
-        left: 10px;
-        justify-content: flex-start;
-    }
-    .reactions-container {
-        display: flex;
-        gap: 2px;
-    }
-    .reaction-badge {
-        background-color: #f0f0f0;
-        border-radius: 10px;
-        padding: 1px 5px;
-        font-size: 0.8em;
-        display: flex;
-        align-items: center;
-    }
-    .reaction-badge .count {
-        margin-left: 3px;
-        font-weight: bold;
-    }
-    .seen-indicator {
-        font-size: 0.8em;
-        color: #888;
-        margin-left: 5px;
-    }
+    .thread-header { display: flex; align-items: center; justify-content: space-between; }
+    .thread-header-main { display: flex; align-items: center; text-decoration: none; color: inherit; }
+    .online-dot { width: 10px; height: 10px; background-color: #28a745; border-radius: 50%; display: inline-block; margin-left: 5px; }
+    .thread-header-actions { display: flex; align-items: center; gap: 15px; }
+    .follow-btn { font-size: 14px; padding: 4px 12px; border-radius: 5px; background-color: #0095f6; color: white; border: 1px solid transparent; cursor: pointer; }
+    .follow-btn.following { background-color: transparent; color: #262626; border-color: #dbdbdb; }
+    .options-menu { position: relative; }
+    .options-btn { background: none; border: none; font-size: 20px; cursor: pointer; }
+    .options-dropdown { display: none; position: absolute; right: 0; top: 100%; background-color: white; border: 1px solid #dbdbdb; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 10; list-style: none; padding: 5px 0; margin: 0; min-width: 150px; }
+    .options-dropdown a { display: block; padding: 10px 15px; text-decoration: none; color: #262626; }
+    .options-dropdown a:hover { background-color: #f9f9f9; }
+    .options-dropdown a.danger { color: #ed4956; }
+
+    /* Reactions and Meta styles from previous steps */
+    .reactions-popup { display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background-color: #fff; border: 1px solid #ddd; border-radius: 20px; padding: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 100; margin-bottom: 5px; }
+    .reactions-popup span { cursor: pointer; padding: 5px; font-size: 1.2em; transition: transform 0.2s; }
+    .reactions-popup span:hover { transform: scale(1.2); }
+    .message-bubble-container { position: relative; margin-bottom: 20px; }
+    .message-meta { display: flex; align-items: center; height: 15px; margin-top: 4px; position: absolute; bottom: -20px; }
+    .sent .message-meta { right: 10px; justify-content: flex-end; }
+    .received .message-meta { left: 10px; justify-content: flex-start; }
+    .reactions-container { display: flex; gap: 2px; }
+    .reaction-badge { background-color: #f0f0f0; border-radius: 10px; padding: 1px 5px; font-size: 0.8em; display: flex; align-items: center; }
+    .reaction-badge .count { margin-left: 3px; font-weight: bold; }
+    .seen-indicator { font-size: 0.8em; color: #888; margin-left: 5px; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="message-thread-container">
     <div class="thread-header">
-        {% if conversation.is_group %}
-            <div class="thread-header-user">
+        <a href="{{ url_for('chat_inbox') }}"><i class="fas fa-arrow-left"></i></a>
+
+        <a href="{{ url_for('chat_info', conversation_id=conversation.id) }}" class="thread-header-main">
+            {% if conversation.is_group %}
                 <img src="{{ url_for('static', filename=conversation.group_photo_path) if conversation.group_photo_path else 'https://i.pravatar.cc/150?u=' + conversation.name }}" alt="{{ conversation.name }}'s photo" class="chat-avatar">
                 <div class="thread-header-info">
                     <span>{{ conversation.name }}</span>
-                    <small class="typing-indicator" style="display: none; font-weight: normal; color: #888;">a member is typing...</small>
                 </div>
-            </div>
-        {% elif other_user %}
-            <a href="{{ url_for('profile', username=other_user.username) }}" class="thread-header-user">
+            {% elif other_user %}
                 <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
                 <div class="thread-header-info">
-                    <span>{{ other_user.full_name }}</span>
+                    <span>
+                        {{ other_user.full_name }}
+                        {% if other_user.last_active_at and (datetime.now(timezone.utc) - other_user.last_active_at.replace(tzinfo=timezone.utc)).total_seconds() < 300 %}
+                            <span class="online-dot"></span>
+                        {% endif %}
+                    </span>
                     <small class="typing-indicator" style="display: none; font-weight: normal; color: #888;">is typing...</small>
                 </div>
-            </a>
-        {% endif %}
+            {% endif %}
+        </a>
+
+        <div class="thread-header-actions">
+            {% if not conversation.is_group and other_user %}
+                {% if g.user.is_following(other_user) %}
+                    <a href="{{ url_for('unfollow', user_id=other_user.id) }}" class="follow-btn following">Following</a>
+                {% else %}
+                    <a href="{{ url_for('follow', user_id=other_user.id) }}" class="follow-btn">Follow</a>
+                {% endif %}
+            {% endif %}
+            <div class="options-menu">
+                <button class="options-btn" onclick="toggleMenu()"><i class="fas fa-ellipsis-h"></i></button>
+                <ul class="options-dropdown" id="thread-options-menu">
+                    {% if not conversation.is_group and other_user %}
+                        <li><a href="{{ url_for('profile', username=other_user.username) }}">View Profile</a></li>
+                    {% endif %}
+                    <li><a href="#">Mute</a></li>
+                    <li><a href="#" class="danger">Block</a></li>
+                    <li><a href="#" class="danger">Report</a></li>
+                    <li><a href="{{ url_for('clear_chat', conversation_id=conversation.id) }}" class="danger" onclick="return confirm('Are you sure you want to clear this chat? This cannot be undone.')">Clear Chat</a></li>
+                </ul>
+            </div>
+        </div>
     </div>
     <div class="message-list" data-conversation-id="{{ conversation.id }}">
         {% for message in messages %}
@@ -153,7 +140,20 @@
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
 <script type="text/javascript">
-document.addEventListener('DOMContentLoaded', function() {
+    function toggleMenu() {
+        const menu = document.getElementById('thread-options-menu');
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+    }
+
+    document.addEventListener('click', function(e) {
+        const menu = document.getElementById('thread-options-menu');
+        const btn = document.querySelector('.options-btn');
+        if (menu && btn && !btn.contains(e.target) && !menu.contains(e.target)) {
+            menu.style.display = 'none';
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
     // --- SETUP ---
     var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
     const messageList = document.querySelector('.message-list');

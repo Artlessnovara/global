@@ -63,6 +63,7 @@ class User(db.Model):
     work_education = db.Column(db.String(150), nullable=True)
     relationship_status = db.Column(db.String(50), nullable=True)
     country = db.Column(db.String(100), nullable=True)
+    last_active_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     posts = db.relationship('Post', backref='author', lazy='dynamic')
     comments = db.relationship('Comment', backref='author', lazy='dynamic')
@@ -198,6 +199,24 @@ class MessageReaction(db.Model):
     user = db.relationship('User')
     __table_args__ = (db.UniqueConstraint('message_id', 'user_id', 'emoji', name='_message_user_emoji_uc'),)
 
+class BlockedUser(db.Model):
+    __tablename__ = 'blocked_users'
+    id = db.Column(db.Integer, primary_key=True)
+    blocker_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    blocked_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (db.UniqueConstraint('blocker_id', 'blocked_id', name='_blocker_blocked_uc'),)
+
+class Report(db.Model):
+    __tablename__ = 'reports'
+    id = db.Column(db.Integer, primary_key=True)
+    reporter_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    reported_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    reported_conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=True)
+    reason = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
 class Participant(db.Model):
     __tablename__ = 'participants'
     id = db.Column(db.Integer, primary_key=True)
@@ -260,6 +279,9 @@ def load_logged_in_user():
         g.user = None
     else:
         g.user = db.session.get(User, user_id)
+        if g.user:
+            g.user.last_active_at = datetime.now(timezone.utc)
+            db.session.commit()
 
 @app.context_processor
 def inject_unread_count():
@@ -279,6 +301,10 @@ def inject_unread_count():
             total_unread_notifications=total_unread_notifications
         )
     return dict(total_unread_messages=0, total_unread_notifications=0)
+
+@app.context_processor
+def inject_datetime():
+    return {'datetime': datetime, 'timezone': timezone}
 
 def login_required(f):
     @wraps(f)
@@ -611,6 +637,21 @@ def suggestions():
         suggested_users = db.session.query(User).join(Post).filter(Post.mode.in_(modes_list), User.id != g.user.id, ~User.id.in_(followed_user_ids)).distinct().limit(20).all()
     return render_template('suggestions.html', suggested_users=suggested_users)
 
+@app.route('/chat/<int:conversation_id>/info')
+@login_required
+def chat_info(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    # Ensure user is a participant
+    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+    if not participant:
+        return "Not your conversation", 403
+
+    other_user = None
+    if not convo.is_group:
+        other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
+
+    return render_template('chat_info.html', conversation=convo, other_user=other_user)
+
 @app.route('/chat/<int:conversation_id>')
 @login_required
 def message_thread(conversation_id):
@@ -825,6 +866,63 @@ def archive_chat(conversation_id):
     participant.status = 'archived'
     db.session.commit()
     return {'status': 'success'}, 200
+
+@app.route('/chat/conversation/<int:conversation_id>/clear', methods=['POST'])
+@login_required
+def clear_chat(conversation_id):
+    # Ensure the user is part of the conversation
+    participant = get_participant_or_404(conversation_id, g.user.id)
+    # Delete all messages in the conversation
+    Message.query.filter_by(conversation_id=conversation_id).delete()
+    db.session.commit()
+    flash('Chat history has been cleared.', 'success')
+    return redirect(url_for('message_thread', conversation_id=conversation_id))
+
+@app.route('/users/<int:user_id>/block', methods=['POST'])
+@login_required
+def block_user(user_id):
+    if user_id == g.user.id:
+        return {'error': 'Cannot block yourself'}, 400
+
+    target_user = db.get_or_404(User, user_id)
+
+    existing_block = BlockedUser.query.filter_by(blocker_id=g.user.id, blocked_id=user_id).first()
+
+    if existing_block:
+        # Unblock the user
+        db.session.delete(existing_block)
+        db.session.commit()
+        return {'status': 'unblocked'}, 200
+    else:
+        # Block the user
+        new_block = BlockedUser(blocker_id=g.user.id, blocked_id=user_id)
+        db.session.add(new_block)
+        db.session.commit()
+        return {'status': 'blocked'}, 200
+
+@app.route('/report', methods=['POST'])
+@login_required
+def report():
+    data = request.get_json()
+    reported_user_id = data.get('reported_user_id')
+    reported_conversation_id = data.get('reported_conversation_id')
+    reason = data.get('reason')
+
+    if not reason:
+        return {'error': 'A reason is required for reporting.'}, 400
+    if not reported_user_id and not reported_conversation_id:
+        return {'error': 'A user or conversation must be reported.'}, 400
+
+    new_report = Report(
+        reporter_id=g.user.id,
+        reported_user_id=reported_user_id,
+        reported_conversation_id=reported_conversation_id,
+        reason=reason
+    )
+    db.session.add(new_report)
+    db.session.commit()
+
+    return {'status': 'success', 'message': 'Report submitted successfully.'}, 201
 
 @app.route('/chat')
 @login_required

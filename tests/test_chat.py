@@ -190,3 +190,26 @@ def test_create_group_chat(client):
     assert user1.id in participant_ids
     assert user2.id in participant_ids
     assert user3.id in participant_ids
+
+def test_clear_chat(client):
+    """Test that the clear chat function deletes messages but not the conversation."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+    convo = Conversation()
+    p1 = Participant(user=user1, conversation=convo)
+    p2 = Participant(user=user2, conversation=convo)
+    msg1 = Message(conversation=convo, sender=user1, body="Message 1")
+    msg2 = Message(conversation=convo, sender=user2, body="Message 2")
+    db.session.add_all([convo, p1, p2, msg1, msg2])
+    db.session.commit()
+
+    assert Message.query.count() == 2
+
+    login(client, 'user1', 'pw')
+    response = client.post(f'/chat/conversation/{convo.id}/clear', follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b'Chat history has been cleared.' in response.data
+    assert Message.query.count() == 0
+    assert Conversation.query.count() == 1 # Conversation should still exist
+    assert Participant.query.count() == 2 # Participants should still exist
