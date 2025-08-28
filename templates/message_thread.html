@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Chat with {{ other_user.full_name if other_user else 'User' }} - GLOOBA{% endblock %}
+{% block title %}
+    {% if conversation.is_group %}
+        {{ conversation.name }}
+    {% else %}
+        Chat with {{ other_user.full_name if other_user else 'User' }}
+    {% endif %}
+    - GLOOBA
+{% endblock %}
 
 {% block head %}
 <style>
@@ -74,7 +81,15 @@
 {% block content %}
 <div class="message-thread-container">
     <div class="thread-header">
-        {% if other_user %}
+        {% if conversation.is_group %}
+            <div class="thread-header-user">
+                <img src="{{ url_for('static', filename=conversation.group_photo_path) if conversation.group_photo_path else 'https://i.pravatar.cc/150?u=' + conversation.name }}" alt="{{ conversation.name }}'s photo" class="chat-avatar">
+                <div class="thread-header-info">
+                    <span>{{ conversation.name }}</span>
+                    <small class="typing-indicator" style="display: none; font-weight: normal; color: #888;">a member is typing...</small>
+                </div>
+            </div>
+        {% elif other_user %}
             <a href="{{ url_for('profile', username=other_user.username) }}" class="thread-header-user">
                 <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
                 <div class="thread-header-info">
@@ -82,13 +97,6 @@
                     <small class="typing-indicator" style="display: none; font-weight: normal; color: #888;">is typing...</small>
                 </div>
             </a>
-        {% else %}
-             <div class="thread-header-user">
-                <span>Group Chat</span>
-                <div class="thread-header-info">
-                    <small class="typing-indicator" style="display: none; font-weight: normal; color: #888;">someone is typing...</small>
-                </div>
-            </div>
         {% endif %}
     </div>
     <div class="message-list" data-conversation-id="{{ conversation.id }}">

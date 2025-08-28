@@ -161,3 +161,32 @@ def test_chat_actions(client):
     client.post(f'/chat/conversation/{convo.id}/archive')
     db.session.refresh(participant)
     assert participant.status == 'archived'
+
+def test_create_group_chat(client):
+    """Test the successful creation of a group chat."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+    user3 = register_user(username='user3', email='user3@test.com', password='pw')
+
+    login(client, 'user1', 'pw')
+
+    response = client.post('/chat/create_group', data={
+        'group_name': 'Test Group',
+        'members': [user2.id, user3.id]
+    }, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b'Group created successfully!' in response.data
+
+    # Verify the conversation was created correctly
+    group_convo = Conversation.query.filter_by(name='Test Group').first()
+    assert group_convo is not None
+    assert group_convo.is_group == True
+
+    # Verify all participants were added
+    participants = group_convo.participants
+    assert len(participants) == 3
+    participant_ids = [p.user_id for p in participants]
+    assert user1.id in participant_ids
+    assert user2.id in participant_ids
+    assert user3.id in participant_ids

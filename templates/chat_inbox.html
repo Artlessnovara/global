@@ -31,7 +31,7 @@
 <div class="chat-inbox-container">
     <div class="inbox-header">
         <h2>Messages</h2>
-        <a href="#" class="new-message-btn"><i class="fas fa-edit"></i></a>
+        <a href="{{ url_for('new_chat') }}" class="new-message-btn"><i class="fas fa-edit"></i></a>
     </div>
 
     <div class="search-bar">
@@ -48,16 +48,14 @@
         <div class="chat-list">
             {% for p_entry in active_chats %}
                 {% set convo = p_entry.conversation %}
-                {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
-                {% if other_participant %}
-                    {% set other_user = other_participant.user %}
-                    <div class="chat-list-item" data-conversation-id="{{ convo.id }}">
-                        <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-list-item-main">
-                            <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
+                <div class="chat-list-item" data-conversation-id="{{ convo.id }}">
+                    <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-list-item-main">
+                        {% if convo.is_group %}
+                            <img src="{{ url_for('static', filename=convo.group_photo_path) if convo.group_photo_path else 'https://i.pravatar.cc/150?u=' + convo.name }}" alt="{{ convo.name }}'s photo" class="chat-avatar">
                             <div class="chat-item-details">
                                 <span class="chat-item-name">
                                     {% if p_entry.is_pinned %}<i class="fas fa-thumbtack pinned-icon"></i>{% endif %}
-                                    {{ other_user.full_name }}
+                                    {{ convo.name }}
                                 </span>
                                 <div class="chat-item-preview">
                                     {% set last_msg = convo.messages.order_by(Message.created_at.desc()).first() %}
@@ -68,22 +66,43 @@
                                     {% endif %}
                                 </div>
                             </div>
-                            <div class="chat-item-meta">
-                                {% if last_msg %}
-                                    <span>{{ last_msg.created_at|humanize_time }}</span>
-                                {% endif %}
-                                {% if convo.unread_messages_for(g.user) > 0 %}
-                                    <div class="unread-dot"></div>
-                                {% endif %}
-                            </div>
-                        </a>
-                        <div class="chat-item-actions">
-                            <button class="action-btn btn-archive" title="Archive"><i class="fas fa-archive"></i></button>
-                            <button class="action-btn btn-mute" title="Mute"><i class="fas fa-bell-slash"></i></button>
-                            <button class="action-btn btn-pin" title="Pin"><i class="fas fa-thumbtack"></i></button>
+                        {% else %}
+                            {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
+                            {% if other_participant %}
+                                {% set other_user = other_participant.user %}
+                                <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
+                                <div class="chat-item-details">
+                                    <span class="chat-item-name">
+                                        {% if p_entry.is_pinned %}<i class="fas fa-thumbtack pinned-icon"></i>{% endif %}
+                                        {{ other_user.full_name }}
+                                    </span>
+                                    <div class="chat-item-preview">
+                                        {% set last_msg = convo.messages.order_by(Message.created_at.desc()).first() %}
+                                        {% if last_msg %}
+                                            {{ last_msg.body[:30] }}{% if last_msg.body|length > 30 %}...{% endif %}
+                                        {% else %}
+                                            No messages yet.
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            {% endif %}
+                        {% endif %}
+                        <div class="chat-item-meta">
+                            {% set last_msg = convo.messages.order_by(Message.created_at.desc()).first() %}
+                            {% if last_msg %}
+                                <span>{{ last_msg.created_at|humanize_time }}</span>
+                            {% endif %}
+                            {% if convo.unread_messages_for(g.user) > 0 %}
+                                <div class="unread-dot"></div>
+                            {% endif %}
                         </div>
+                    </a>
+                    <div class="chat-item-actions">
+                        <button class="action-btn btn-archive" title="Archive"><i class="fas fa-archive"></i></button>
+                        <button class="action-btn btn-mute" title="Mute"><i class="fas fa-bell-slash"></i></button>
+                        <button class="action-btn btn-pin" title="Pin"><i class="fas fa-thumbtack"></i></button>
                     </div>
-                {% endif %}
+                </div>
             {% else %}
                 <div class="no-chats" style="padding: 20px; text-align: center;">
                     <p>You have no active conversations.</p>

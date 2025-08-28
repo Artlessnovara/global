@@ -164,6 +164,12 @@ class Conversation(db.Model):
     __tablename__ = 'conversations'
     id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Group chat specific fields
+    is_group = db.Column(db.Boolean, default=False, nullable=False)
+    name = db.Column(db.String(150), nullable=True)
+    group_photo_path = db.Column(db.String(255), nullable=True)
+
     messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade="all, delete-orphan")
     participants = db.relationship('Participant', back_populates='conversation', cascade="all, delete-orphan")
 
@@ -622,6 +628,59 @@ def message_thread(conversation_id):
     other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
     other_participant = next((p for p in convo.participants if p.user_id != g.user.id), None)
     return render_template('message_thread.html', conversation=convo, messages=messages, other_user=other_user, other_participant=other_participant)
+
+@app.route('/chat/new')
+@login_required
+def new_chat():
+    users = User.query.filter(User.id != g.user.id).order_by(User.full_name).all()
+    return render_template('new_chat.html', users=users)
+
+@app.route('/chat/create_group', methods=['GET', 'POST'])
+@login_required
+def create_group():
+    if request.method == 'POST':
+        group_name = request.form.get('group_name')
+        member_ids = request.form.getlist('members')
+
+        if not group_name or not member_ids:
+            flash('Group name and members are required.', 'error')
+            return redirect(url_for('create_group'))
+
+        # Create the new group conversation
+        new_convo = Conversation(
+            name=group_name,
+            is_group=True
+        )
+
+        # Handle group photo upload
+        if 'group_photo' in request.files:
+            file = request.files['group_photo']
+            if file.filename != '':
+                filename = secure_filename(file.filename)
+                # Use a different folder for group photos
+                group_photos_dir = os.path.join(app.static_folder, 'group_photos')
+                os.makedirs(group_photos_dir, exist_ok=True)
+                unique_filename = f"group_{int(datetime.now(timezone.utc).timestamp())}_{filename}"
+                file_path = os.path.join(group_photos_dir, unique_filename)
+                file.save(file_path)
+                new_convo.group_photo_path = os.path.join('group_photos', unique_filename)
+
+        db.session.add(new_convo)
+        db.session.commit()
+
+        # Add current user and selected members as participants
+        all_member_ids = [g.user.id] + [int(id) for id in member_ids]
+        for user_id in all_member_ids:
+            participant = Participant(user_id=user_id, conversation_id=new_convo.id, status='active')
+            db.session.add(participant)
+
+        db.session.commit()
+        flash('Group created successfully!', 'success')
+        return redirect(url_for('message_thread', conversation_id=new_convo.id))
+
+    # For GET request
+    users = User.query.filter(User.id != g.user.id).order_by(User.full_name).all()
+    return render_template('create_group.html', users=users)
 
 @app.route('/chat/start/<int:user_id>')
 @login_required
