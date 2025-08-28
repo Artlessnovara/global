@@ -1,153 +1,37 @@
 {% extends "base.html" %}
 
-{% block title %}
-    {% if conversation.is_group %}
-        {{ conversation.name }}
-    {% else %}
-        Chat with {{ other_user.full_name if other_user else 'User' }}
-    {% endif %}
-    - GLOOBA
-{% endblock %}
-
-{% block head %}
-<style>
-    .thread-header { display: flex; align-items: center; justify-content: space-between; }
-    .thread-header-main { display: flex; align-items: center; text-decoration: none; color: inherit; }
-    .online-dot { width: 10px; height: 10px; background-color: #28a745; border-radius: 50%; display: inline-block; margin-left: 5px; }
-    .thread-header-actions { display: flex; align-items: center; gap: 15px; }
-    .follow-btn { font-size: 14px; padding: 4px 12px; border-radius: 5px; background-color: #0095f6; color: white; border: 1px solid transparent; cursor: pointer; }
-    .follow-btn.following { background-color: transparent; color: #262626; border-color: #dbdbdb; }
-    .options-menu { position: relative; }
-    .options-btn { background: none; border: none; font-size: 20px; cursor: pointer; }
-    .options-dropdown { display: none; position: absolute; right: 0; top: 100%; background-color: white; border: 1px solid #dbdbdb; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 10; list-style: none; padding: 5px 0; margin: 0; min-width: 150px; }
-    .options-dropdown a { display: block; padding: 10px 15px; text-decoration: none; color: #262626; }
-    .options-dropdown a:hover { background-color: #f9f9f9; }
-    .options-dropdown a.danger { color: #ed4956; }
-
-    /* Reactions and Meta styles from previous steps */
-    .reactions-popup { display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background-color: #fff; border: 1px solid #ddd; border-radius: 20px; padding: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 100; margin-bottom: 5px; }
-    .reactions-popup span { cursor: pointer; padding: 5px; font-size: 1.2em; transition: transform 0.2s; }
-    .reactions-popup span:hover { transform: scale(1.2); }
-    .message-bubble-container { position: relative; margin-bottom: 20px; }
-    .message-meta { display: flex; align-items: center; height: 15px; margin-top: 4px; position: absolute; bottom: -20px; }
-    .sent .message-meta { right: 10px; justify-content: flex-end; }
-    .received .message-meta { left: 10px; justify-content: flex-start; }
-    .reactions-container { display: flex; gap: 2px; }
-    .reaction-badge { background-color: #f0f0f0; border-radius: 10px; padding: 1px 5px; font-size: 0.8em; display: flex; align-items: center; }
-    .reaction-badge .count { margin-left: 3px; font-weight: bold; }
-</style>
-{% endblock %}
+{% block title %}Chat with {{ other_user.full_name if other_user else 'User' }} - GLOOBA{% endblock %}
 
 {% block content %}
 <div class="message-thread-container">
     <div class="thread-header">
-        <a href="{{ url_for('chat_inbox') }}"><i class="fas fa-arrow-left"></i></a>
-
-        <a href="{{ url_for('chat_info', conversation_id=conversation.id) if conversation.is_group else '#' }}" class="thread-header-main">
-            {% if conversation.is_group %}
-                <img src="{{ url_for('static', filename=conversation.group_photo_path) if conversation.group_photo_path else url_for('static', filename='img/default-avatar.png') }}" alt="{{ conversation.name }}'s photo" class="chat-avatar">
-                <div class="thread-header-info">
-                    <span>{{ conversation.name }}</span>
-                </div>
-            {% elif other_user %}
+        {% if other_user %}
+            <a href="{{ url_for('profile', username=other_user.username) }}" class="thread-header-user">
                 <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
-                <div class="thread-header-info">
-                    <span>
-                        {{ other_user.full_name }}
-                        {% if other_user.last_active_at and (datetime.now(timezone.utc) - other_user.last_active_at.replace(tzinfo=timezone.utc)).total_seconds() < 300 %}
-                            <span class="online-dot"></span>
-                        {% endif %}
-                    </span>
-                    <small class="typing-indicator" style="display: none; font-weight: normal; color: #888;">is typing...</small>
-                </div>
-            {% endif %}
-        </a>
-
-        <div class="thread-header-actions">
-            <div class="options-menu">
-                <button class="options-btn" onclick="toggleMenu()"><i class="fas fa-ellipsis-h"></i></button>
-                <ul class="options-dropdown" id="thread-options-menu">
-                    <li><a href="#" data-bs-toggle="modal" data-bs-target="#muteModal">Mute</a></li>
-                    <li><a href="#" class="danger">Block</a></li>
-                    <li><a href="#" class="danger">Report</a></li>
-                </ul>
+                <span>{{ other_user.full_name }}</span>
+            </a>
+        {% else %}
+             <div class="thread-header-user">
+                <span>Group Chat</span>
             </div>
-        </div>
+        {% endif %}
     </div>
-    <div id="pinned-message-banner" class="pinned-message-banner" style="display: none;">
-        <i class="fas fa-thumbtack"></i>
-        <div class="pinned-message-content">
-            <strong>Pinned Message</strong>
-            <p></p>
-        </div>
-        <button id="close-pinned-banner">&times;</button>
-    </div>
-    <div class="message-list" data-conversation-id="{{ conversation.id }}">
-        {% set last_timestamp = [None] %}
+    <div class="message-list">
         {% for message in messages %}
-            {% set show_timestamp = [False] %}
-            {% if last_timestamp[0] is none or (message.created_at - last_timestamp[0]).total_seconds() > 900 %}
-                {% if show_timestamp.append(True) %}{% endif %}
-            {% endif %}
-
-            {% if show_timestamp[-1] %}
-                <div class="timestamp-divider">
-                    <span>{{ message.created_at | humanize_time }}</span>
-                </div>
-            {% endif %}
-
-            <div class="message-bubble-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}" data-message-id="{{ message.id }}" data-is-pinned="{{ message.is_pinned|string|lower }}">
-                {% if message.parent %}
-                <div class="parent-message-preview">
-                    <strong>{{ message.parent.sender.full_name }}</strong>
-                    <p>{{ message.parent.body }}</p>
-                </div>
-                {% endif %}
-                <div class="message-bubble" data-author-name="{{ message.sender.full_name }}">
-                    {% if message.content_type == 'photo' %}
-                        <img src="{{ url_for('static', filename=message.content_path) }}" class="chat-media-photo" alt="User uploaded photo">
-                    {% elif message.content_type == 'video' %}
-                        <video src="{{ url_for('static', filename=message.content_path) }}" class="chat-media-video" controls></video>
-                    {% elif message.content_type == 'shared_post' %}
-                        <div class="shared-post-card">
-                            <a href="{{ url_for('post_detail', post_id=message.shared_post.id) }}">
-                                {% if message.shared_post.content_type in ['photo', 'video'] %}
-                                    <img src="{{ url_for('static', filename=message.shared_post.content_path) }}" class="shared-post-media" alt="Shared post media">
-                                {% endif %}
-                                <div class="shared-post-info">
-                                    <strong>{{ message.shared_post.author.full_name }}</strong>
-                                    <p>{{ message.shared_post.text | truncate(100) }}</p>
-                                </div>
-                            </a>
-                        </div>
-                    {% endif %}
-                    {% if message.body %}
-                        <p>{{ message.body | linkify_mentions | safe }}</p>
-                    {% endif %}
-                </div>
-                <div class="message-meta">
-                    <div class="reactions-container">
-                        {% for emoji, reactions in message.reactions | sort(attribute='emoji') | groupby('emoji') %}
-                            <div class="reaction-badge" data-emoji="{{ emoji }}">
-                                <span>{{ emoji }}</span>
-                                <span class="count">{{ reactions|length }}</span>
-                            </div>
-                        {% endfor %}
-                    </div>
-                    {% if message.user_id == g.user.id %}
-                        <span class="message-ticks">
-                            {% if other_participant and other_participant.last_seen_message_id and other_participant.last_seen_message_id >= message.id %}
-                                <i class="fas fa-check-double seen"></i>
-                            {% else %}
-                                <i class="fas fa-check"></i>
+            <div class="message-bubble-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}" data-message-id="{{ message.id }}">
+                <div class="message-bubble">
+                    <p>{{ message.body }}</p>
+                    <div class="message-actions">
+                        <button class="message-action-btn"><i class="fas fa-ellipsis-v"></i></button>
+                        <div class="message-actions-menu">
+                            <a href="#" class="delete-for-me">Delete for Me</a>
+                            {% if message.user_id == g.user.id %}
+                            <a href="#" class="delete-for-everyone">Delete for Everyone</a>
                             {% endif %}
-                        </span>
-                    {% endif %}
+                        </div>
+                    </div>
                 </div>
             </div>
-            {# Update the timestamp for the next iteration #}
-            {% if last_timestamp.pop() %}{% endif %}
-            {% if last_timestamp.append(message.created_at) %}{% endif %}
         {% endfor %}
     </div>
     {% set participant = conversation.participants|selectattr('user_id', 'equalto', g.user.id)|first %}
@@ -162,478 +46,129 @@
     </div>
     {% else %}
     <div class="message-composer">
-        <div id="reply-preview" class="reply-preview" style="display: none;">
-            <div class="reply-preview-content">
-                <strong id="reply-preview-author"></strong>
-                <p id="reply-preview-text"></p>
-            </div>
-            <button id="close-reply-preview" class="close-reply-preview">&times;</button>
-        </div>
-        <form method="post" action="javascript:void(0);">
-            <input type="file" id="media-upload-input" hidden accept="image/*,video/*">
-            <div class="composer-actions">
-                <button type="button" id="composer-menu-btn" class="composer-btn"><i class="fas fa-plus"></i></button>
-                <div id="composer-menu" class="composer-menu">
-                    <button type="button" id="photo-video-btn"><i class="fas fa-photo-video"></i> Photo/Video</button>
-                    <button type="button"><i class="fas fa-file"></i> File</button>
-                </div>
-                <button type="button" class="composer-btn"><i class="fas fa-camera"></i></button>
-                <button type="button" class="composer-btn"><i class="fas fa-microphone"></i></button>
-            </div>
-            <input type="hidden" id="reply-parent-id" name="parent_id" value="">
-            <div class="composer-input-container">
-                <textarea id="message-input" name="body" placeholder="Type a message..." rows="1" autocomplete="off" required></textarea>
-                <button type="button" class="composer-btn emoji-btn"><i class="fas fa-smile"></i></button>
-            </div>
-            <button type="submit" id="send-btn"><i class="fas fa-paper-plane"></i></button>
+        <form>
+            <input type="text" name="body" placeholder="Type a message..." autocomplete="off" required>
+            <button type="submit"><i class="fas fa-paper-plane"></i></button>
         </form>
     </div>
     {% endif %}
 </div>
 
-<!-- Reactions Popup -->
-<div id="reactions-popup" class="reactions-popup">
-    <span>👍</span>
-    <span>❤️</span>
-    <span>😂</span>
-    <span>😮</span>
-    <span>😢</span>
-    <span>🙏</span>
-</div>
-
-<!-- Custom Message Context Menu -->
-<div id="message-context-menu" class="context-menu">
-    <ul>
-        <li id="context-menu-react">React to message</li>
-        <li id="context-menu-reply">Reply</li>
-        <li id="context-menu-pin" style="display: none;">Pin</li>
-        <li id="context-menu-delete" class="danger-option" style="display: none;">Delete</li>
-    </ul>
-</div>
-
-<!-- Mute Modal -->
-<div class="modal fade" id="muteModal" tabindex="-1" aria-labelledby="muteModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="muteModalLabel">Mute notifications</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p>You will still be notified if you are mentioned.</p>
-        <div class="list-group">
-          <button type="button" class="list-group-item list-group-item-action mute-duration-btn" data-duration="8h">For 8 hours</button>
-          <button type="button" class="list-group-item list-group-item-action mute-duration-btn" data-duration="1d">For 1 day</button>
-          <button type="button" class="list-group-item list-group-item-action mute-duration-btn" data-duration="forever">Until I unmute</button>
+<template id="message-actions-template">
+    <div class="message-actions">
+        <button class="message-action-btn"><i class="fas fa-ellipsis-v"></i></button>
+        <div class="message-actions-menu">
+            <a href="#" class="delete-for-me">Delete for Me</a>
+            <a href="#" class="delete-for-everyone" style="display: none;">Delete for Everyone</a>
         </div>
-      </div>
     </div>
-  </div>
-</div>
+</template>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
 <script type="text/javascript">
-    function toggleMenu() {
-        const menu = document.getElementById('thread-options-menu');
-        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
-    }
-
     document.addEventListener('DOMContentLoaded', function() {
-    // --- SETUP ---
-    const messageList = document.querySelector('.message-list');
-    var conversationId = messageList.dataset.conversationId;
-    const otherUserId = {{ other_user.id if other_user else 'null' }};
-    const currentUserId = {{ g.user.id }};
-    const lastSeenIdByOther = {{ other_participant.last_seen_message_id if other_participant and other_participant.last_seen_message_id else 'null' }};
-    const messageInput = document.getElementById('message-input');
-    const messageForm = document.querySelector('.message-composer form');
-    const typingIndicator = document.querySelector('.typing-indicator');
-    const reactionsPopup = document.getElementById('reactions-popup');
-    let currentMessageIdForReaction = null;
+        var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+        var conversationId = "{{ conversation.id }}";
 
-    // --- HELPER FUNCTIONS ---
-    function updateReaction(data) {
-        const messageContainer = document.querySelector(`.message-bubble-container[data-message-id='${data.message_id}']`);
-        if (!messageContainer) return;
+        socket.on('connect', function() {
+            socket.emit('join', {room: conversationId});
+        });
 
-        const reactionsContainer = messageContainer.querySelector('.reactions-container');
-        if (!reactionsContainer) return;
+        socket.on('new_message', function(msg) {
+            const messageList = document.querySelector('.message-list');
+            const currentUserId = {{ g.user.id }};
 
-        let reactionBadge = reactionsContainer.querySelector(`.reaction-badge[data-emoji='${data.emoji}']`);
-        if (reactionBadge) {
-            let countEl = reactionBadge.querySelector('.count');
-            let currentCount = parseInt(countEl.textContent, 10);
-            let newCount = data.action === 'added' ? currentCount + 1 : currentCount - 1;
-
-            if (newCount > 0) {
-                countEl.textContent = newCount;
+            const bubbleContainer = document.createElement('div');
+            bubbleContainer.classList.add('message-bubble-container');
+            if (msg.user_id === currentUserId) {
+                bubbleContainer.classList.add('sent');
             } else {
-                reactionBadge.remove();
+                bubbleContainer.classList.add('received');
             }
-        } else if (data.action === 'added') {
-            reactionBadge = document.createElement('div');
-            reactionBadge.className = 'reaction-badge';
-            reactionBadge.dataset.emoji = data.emoji;
-            reactionBadge.innerHTML = `<span>${data.emoji}</span><span class="count">1</span>`;
-            reactionsContainer.appendChild(reactionBadge);
-        }
-    }
+            bubbleContainer.dataset.messageId = msg.id;
 
-    // --- SOCKET.IO EVENT HANDLERS ---
-    socket.on('connect', () => socket.emit('join', {room: conversationId}));
+            const bubble = document.createElement('div');
+            bubble.classList.add('message-bubble');
+            const p = document.createElement('p');
+            p.textContent = msg.body;
+            bubble.appendChild(p);
 
-    socket.on('new_message', msg => {
-        if (msg.user_id === otherUserId && typingIndicator) typingIndicator.style.display = 'none';
-
-        let parentPreviewHTML = '';
-        if (msg.parent) {
-            parentPreviewHTML = `
-                <div class="parent-message-preview">
-                    <strong>${msg.parent.author_name}</strong>
-                    <p>${msg.parent.body}</p>
-                </div>
-            `;
-        }
-
-        const bubbleContainer = document.createElement('div');
-        bubbleContainer.className = `message-bubble-container ${msg.user_id === currentUserId ? 'sent' : 'received'}`;
-        bubbleContainer.dataset.messageId = msg.id;
-
-        let mediaHTML = '';
-        if (msg.content_type === 'photo') {
-            mediaHTML = `<img src="/static/${msg.content_path}" class="chat-media-photo" alt="User uploaded photo">`;
-        } else if (msg.content_type === 'video') {
-            mediaHTML = `<video src="/static/${msg.content_path}" class="chat-media-video" controls></video>`;
-        } else if (msg.content_type === 'shared_post' && msg.shared_post) {
-            let post_media = '';
-            if (msg.shared_post.content_type === 'photo' || msg.shared_post.content_type === 'video') {
-                post_media = `<img src="/static/${msg.shared_post.content_path}" class="shared-post-media" alt="Shared post media">`;
+            const template = document.getElementById('message-actions-template');
+            const actions = template.content.cloneNode(true);
+            if (msg.user_id === currentUserId) {
+                actions.querySelector('.delete-for-everyone').style.display = 'block';
             }
-            mediaHTML = `
-                <div class="shared-post-card">
-                    <a href="/post/${msg.shared_post.id}">
-                        ${post_media}
-                        <div class="shared-post-info">
-                            <strong>${msg.shared_post.author_name}</strong>
-                            <p>${msg.shared_post.text.substring(0, 100)}</p>
-                        </div>
-                    </a>
-                </div>
-            `;
-        }
-        function linkifyMentionsJS(text) {
-            if (!text) return '';
-            const mentionPattern = /(?<!\S)@([a-zA-Z0-9_]+)/g;
-            return text.replace(mentionPattern, (match, username) => {
-                return `<a href="/profile/${username}">@${username}</a>`;
-            });
-        }
+            bubble.appendChild(actions);
 
-        let bodyHTML = msg.body ? `<p>${linkifyMentionsJS(msg.body)}</p>` : '';
+            bubbleContainer.appendChild(bubble);
+            messageList.appendChild(bubbleContainer);
+            messageList.scrollTop = messageList.scrollHeight;
+        });
 
-        bubbleContainer.innerHTML = `
-            ${parentPreviewHTML}
-            <div class="message-bubble" data-author-name="${msg.author_name}">
-                ${mediaHTML}
-                ${bodyHTML}
-            </div>
-            <div class="message-meta"><div class="reactions-container"></div></div>
-        `;
+        socket.on('message_deleted', function(data) {
+            const messageElement = document.querySelector(`.message-bubble-container[data-message-id='${data.message_id}']`);
+            if (messageElement) {
+                messageElement.remove();
+            }
+        });
 
-        messageList.appendChild(bubbleContainer);
-        messageList.scrollTop = messageList.scrollHeight;
-        setTimeout(() => observer.observe(bubbleContainer), 100);
-    });
-
-    socket.on('user_typing', data => { if (data.user_id === otherUserId && typingIndicator) typingIndicator.style.display = 'inline'; });
-    socket.on('user_stopped_typing', data => { if (data.user_id === otherUserId && typingIndicator) typingIndicator.style.display = 'none'; });
-
-    socket.on('message_was_seen', data => {
-        if (data.user_id === otherUserId) {
-             const messageContainer = document.querySelector(`.message-bubble-container[data-message-id='${data.message_id}']`);
-             if(messageContainer){
-                const ticks = messageContainer.querySelector('.message-ticks');
-                if(ticks){
-                    ticks.innerHTML = '<i class="fas fa-check-double seen"></i>';
-                }
-             }
-        }
-    });
-
-    socket.on('reaction_added', data => updateReaction({ ...data, action: 'added' }));
-    socket.on('reaction_removed', data => updateReaction({ ...data, action: 'removed' }));
-
-    socket.on('message_pin_status_changed', function(data) {
-        const messageContainer = document.querySelector(`.message-bubble-container[data-message-id='${data.message_id}']`);
-        if (messageContainer) {
-            messageContainer.dataset.isPinned = data.is_pinned;
-            updatePinnedMessageBanner();
-        }
-    });
-
-    // --- DOM EVENT LISTENERS ---
-    if (messageForm) {
-        messageForm.addEventListener('submit', e => {
+        const form = document.querySelector('.message-composer form');
+        form.addEventListener('submit', function(e) {
             e.preventDefault();
+            let messageInput = document.querySelector('input[name="body"]');
             let message = messageInput.value;
-            let parentId = document.getElementById('reply-parent-id').value;
-            if (message.trim()) {
-                clearTimeout(typingTimer);
-                socket.emit('typing_stop', {room: conversationId});
-                socket.emit('send_message', {
-                    room: conversationId,
-                    message: message,
-                    parent_id: parentId || null
-                });
+            if (message.trim() !== '') {
+                socket.emit('send_message', {room: conversationId, message: message});
                 messageInput.value = '';
-                document.getElementById('reply-preview').style.display = 'none';
-                document.getElementById('reply-parent-id').value = '';
-                messageInput.style.height = 'auto';
             }
         });
-    }
 
-    let typingTimer;
-    if (messageInput) {
-        messageInput.addEventListener('input', function() {
-            // Auto-resize logic
-            this.style.height = 'auto';
-            let scrollHeight = this.scrollHeight;
-            const maxHeight = 120; // Max height for ~6 lines
-            if (scrollHeight > maxHeight) {
-                this.style.height = maxHeight + 'px';
-                this.style.overflowY = 'auto';
-            } else {
-                this.style.height = scrollHeight + 'px';
-                this.style.overflowY = 'hidden';
+        document.querySelector('.message-list').addEventListener('click', function(event) {
+            const actionButton = event.target.closest('.message-action-btn');
+            if (actionButton) {
+                const menu = actionButton.closest('.message-actions').querySelector('.message-actions-menu');
+                menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
             }
 
-            // Typing indicator logic
-            clearTimeout(typingTimer);
-            socket.emit('typing_start', {room: conversationId});
-            typingTimer = setTimeout(() => socket.emit('typing_stop', {room: conversationId}), 1500);
-        });
-    }
+            const messageContainer = event.target.closest('.message-bubble-container');
+            if (!messageContainer) return;
+            const messageId = messageContainer.dataset.messageId;
 
-    const contextMenu = document.getElementById('message-context-menu');
-    let currentMessageForContext = null;
-
-    messageList.addEventListener('contextmenu', e => {
-        const bubble = e.target.closest('.message-bubble');
-        if (bubble) {
-            e.preventDefault();
-            currentMessageForContext = bubble.closest('.message-bubble-container');
-
-            // Show/hide delete option based on who sent the message
-            const deleteOption = document.getElementById('context-menu-delete');
-            if (currentMessageForContext.classList.contains('sent')) {
-                deleteOption.style.display = 'block';
-            } else {
-                deleteOption.style.display = 'none';
-            }
-
-            // Show/hide pin option for admins
-            const pinOption = document.getElementById('context-menu-pin');
-            const currentUserIsAdmin = {{ participant.role == 'admin'|tojson if participant else 'false' }};
-            if (currentUserIsAdmin) {
-                pinOption.style.display = 'block';
-                const isPinned = currentMessageForContext.dataset.isPinned === 'true';
-                pinOption.textContent = isPinned ? 'Unpin' : 'Pin';
-            } else {
-                pinOption.style.display = 'none';
-            }
-
-            contextMenu.style.top = `${e.pageY}px`;
-            contextMenu.style.left = `${e.pageX}px`;
-            contextMenu.style.display = 'block';
-        }
-    });
-
-    document.addEventListener('click', e => {
-        if (!e.target.closest('.context-menu')) {
-            contextMenu.style.display = 'none';
-        }
-        if (!e.target.closest('.message-bubble') && !e.target.closest('.reactions-popup')) {
-            reactionsPopup.style.display = 'none';
-        }
-    });
-
-    document.getElementById('context-menu-pin').addEventListener('click', () => {
-        if (currentMessageForContext) {
-            const messageId = currentMessageForContext.dataset.messageId;
-            fetch(`/chat/message/${messageId}/pin`, { method: 'POST' });
-            contextMenu.style.display = 'none';
-        }
-    });
-
-    document.getElementById('context-menu-react').addEventListener('click', () => {
-        if (currentMessageForContext) {
-            currentMessageIdForReaction = currentMessageForContext.dataset.messageId;
-            reactionsPopup.style.display = 'block';
-            currentMessageForContext.appendChild(reactionsPopup);
-            contextMenu.style.display = 'none';
-        }
-    });
-
-    document.getElementById('context-menu-reply').addEventListener('click', () => {
-        if (currentMessageForContext) {
-            const parentId = currentMessageForContext.dataset.messageId;
-            const parentAuthor = currentMessageForContext.querySelector('.message-bubble').dataset.authorName;
-            const parentText = currentMessageForContext.querySelector('.message-bubble p').textContent;
-
-            document.getElementById('reply-parent-id').value = parentId;
-            document.getElementById('reply-preview-author').textContent = `Replying to ${parentAuthor}`;
-            document.getElementById('reply-preview-text').textContent = parentText;
-            document.getElementById('reply-preview').style.display = 'flex';
-
-            messageInput.focus();
-            contextMenu.style.display = 'none';
-        }
-    });
-
-    document.getElementById('close-reply-preview').addEventListener('click', () => {
-        document.getElementById('reply-preview').style.display = 'none';
-        document.getElementById('reply-parent-id').value = '';
-    });
-
-    document.getElementById('close-pinned-banner').addEventListener('click', () => {
-        document.getElementById('pinned-message-banner').style.display = 'none';
-    });
-
-    document.querySelectorAll('.mute-duration-btn').forEach(button => {
-        button.addEventListener('click', function() {
-            const duration = this.dataset.duration;
-            fetch(`/chat/conversation/${conversationId}/mute`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ duration: duration })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    const muteModal = bootstrap.Modal.getInstance(document.getElementById('muteModal'));
-                    muteModal.hide();
-                    // Optionally, show a success flash message dynamically
-                } else {
-                    alert('Error muting conversation: ' + data.error);
-                }
-            });
-        });
-    });
-
-    document.getElementById('context-menu-delete').addEventListener('click', () => {
-        if (currentMessageForContext) {
-            const messageId = currentMessageForContext.dataset.messageId;
-            if (confirm('Are you sure you want to delete this message for everyone?')) {
-                fetch(`/chat/message/${messageId}/delete`, { method: 'POST' })
-                .then(res => res.json())
+            if (event.target.classList.contains('delete-for-me')) {
+                event.preventDefault();
+                fetch(`/chat/message/${messageId}/delete_for_me`, { method: 'POST' })
+                .then(response => response.json())
                 .then(data => {
-                    if (!data.success) {
-                        alert('Error deleting message: ' + data.error);
+                    if (data.success) {
+                        messageContainer.remove();
                     }
                 });
             }
-            contextMenu.style.display = 'none';
-        }
-    });
 
-    socket.on('message_deleted', function(data) {
-        const messageContainer = document.querySelector(`.message-bubble-container[data-message-id='${data.message_id}']`);
-        if (messageContainer) {
-            messageContainer.remove();
-        }
-    });
-
-    document.getElementById('composer-menu-btn').addEventListener('click', () => {
-        const menu = document.getElementById('composer-menu');
-        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
-    });
-
-    document.getElementById('photo-video-btn').addEventListener('click', () => {
-        document.getElementById('media-upload-input').click();
-    });
-
-    document.getElementById('media-upload-input').addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const formData = new FormData();
-        formData.append('media_file', file);
-
-        fetch(`/chat/conversation/${conversationId}/upload_media`, {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Now send the message via socket with the media path
-                socket.emit('send_message', {
-                    room: conversationId,
-                    message: messageInput.value, // Send current text as caption
-                    content_type: data.content_type,
-                    content_path: data.content_path
+            if (event.target.classList.contains('delete-for-everyone')) {
+                event.preventDefault();
+                fetch(`/chat/message/${messageId}/delete`, { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    // The socket event will handle the removal
                 });
-                messageInput.value = '';
-                messageInput.style.height = 'auto';
-            } else {
-                alert('Error uploading file: ' + data.error);
             }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred during upload.');
         });
-    });
 
-    reactionsPopup.addEventListener('click', e => {
-        if (e.target.tagName === 'SPAN') {
-            const emoji = e.target.textContent;
-            fetch(`/chat/message/${currentMessageIdForReaction}/react`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ emoji: emoji })
+        // Hide menu when clicking outside
+        document.addEventListener('click', function(event) {
+            document.querySelectorAll('.message-actions-menu').forEach(function(menu) {
+                if (!menu.parentElement.contains(event.target)) {
+                    menu.style.display = 'none';
+                }
             });
-            reactionsPopup.style.display = 'none';
-        }
-    });
-
-    // --- INTERSECTION OBSERVER FOR SEEN STATUS ---
-    const observer = new IntersectionObserver((entries, observer) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting && entry.target.classList.contains('received')) {
-                socket.emit('message_seen', {room: conversationId, message_id: parseInt(entry.target.dataset.messageId)});
-            }
         });
-    }, { root: null, threshold: 0.9 });
 
-    // --- INITIALIZATION ---
-    function updatePinnedMessageBanner() {
-        const pinnedMessages = document.querySelectorAll('.message-bubble-container[data-is-pinned="true"]');
-        const banner = document.getElementById('pinned-message-banner');
-        const bannerText = banner.querySelector('p');
 
-        if (pinnedMessages.length > 0) {
-            // For simplicity, just show the first pinned message
-            const firstPinned = pinnedMessages[0];
-            bannerText.textContent = firstPinned.querySelector('.message-bubble p').textContent;
-            banner.style.display = 'flex';
-        } else {
-            banner.style.display = 'none';
-        }
-    }
-
-    document.querySelectorAll('.message-bubble-container').forEach(msg => {
-        if (msg.dataset.isPinned === 'true') {
-            // This is a bit redundant with the function above, but ensures initial state is captured
-        }
-        observer.observe(msg);
+        const messageList = document.querySelector('.message-list');
+        messageList.scrollTop = message-list.scrollHeight;
     });
-
-    updatePinnedMessageBanner(); // Initial check on page load
-
-    messageList.scrollTop = messageList.scrollHeight;
-});
 </script>
 {% endblock %}
