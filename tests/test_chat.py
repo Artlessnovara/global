@@ -1,5 +1,5 @@
 import pytest
-from tests.test_auth import register_user, login
+from tests.test_auth import register_user, login, logout
 from app import db, User, Conversation, Message, Participant, socketio
 
 def test_start_new_chat(client):
@@ -97,6 +97,7 @@ def test_message_request_flow(client):
     assert recipient_participant.status == 'pending'
 
     # Log in as Recipient and check inbox
+    logout(client) # Ensure session is clean before logging in as new user
     login(client, 'recipient', 'pw')
     response = client.get('/chat')
     assert b'Requests (1)' in response.data

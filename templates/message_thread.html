@@ -2,25 +2,111 @@
 
 {% block title %}Chat with {{ other_user.full_name if other_user else 'User' }} - GLOOBA{% endblock %}
 
+{% block head %}
+<style>
+    .reactions-popup {
+        display: none;
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #fff;
+        border: 1px solid #ddd;
+        border-radius: 20px;
+        padding: 5px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        z-index: 100;
+        margin-bottom: 5px;
+    }
+    .reactions-popup span {
+        cursor: pointer;
+        padding: 5px;
+        font-size: 1.2em;
+        transition: transform 0.2s;
+    }
+    .reactions-popup span:hover {
+        transform: scale(1.2);
+    }
+    .message-bubble-container {
+        position: relative;
+        margin-bottom: 20px; /* Space for meta content */
+    }
+    .message-meta {
+        display: flex;
+        align-items: center;
+        height: 15px;
+        margin-top: 4px;
+        position: absolute;
+        bottom: -20px;
+    }
+    .sent .message-meta {
+        right: 10px;
+        justify-content: flex-end;
+    }
+    .received .message-meta {
+        left: 10px;
+        justify-content: flex-start;
+    }
+    .reactions-container {
+        display: flex;
+        gap: 2px;
+    }
+    .reaction-badge {
+        background-color: #f0f0f0;
+        border-radius: 10px;
+        padding: 1px 5px;
+        font-size: 0.8em;
+        display: flex;
+        align-items: center;
+    }
+    .reaction-badge .count {
+        margin-left: 3px;
+        font-weight: bold;
+    }
+    .seen-indicator {
+        font-size: 0.8em;
+        color: #888;
+        margin-left: 5px;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="message-thread-container">
     <div class="thread-header">
         {% if other_user %}
             <a href="{{ url_for('profile', username=other_user.username) }}" class="thread-header-user">
                 <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
-                <span>{{ other_user.full_name }}</span>
+                <div class="thread-header-info">
+                    <span>{{ other_user.full_name }}</span>
+                    <small class="typing-indicator" style="display: none; font-weight: normal; color: #888;">is typing...</small>
+                </div>
             </a>
         {% else %}
              <div class="thread-header-user">
                 <span>Group Chat</span>
+                <div class="thread-header-info">
+                    <small class="typing-indicator" style="display: none; font-weight: normal; color: #888;">someone is typing...</small>
+                </div>
             </div>
         {% endif %}
     </div>
-    <div class="message-list">
+    <div class="message-list" data-conversation-id="{{ conversation.id }}">
         {% for message in messages %}
-            <div class="message-bubble-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}">
+            <div class="message-bubble-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}" data-message-id="{{ message.id }}">
                 <div class="message-bubble">
                     <p>{{ message.body }}</p>
+                </div>
+                <div class="message-meta">
+                    <div class="reactions-container">
+                        {% for emoji, reactions in message.reactions | sort(attribute='emoji') | groupby('emoji') %}
+                            <div class="reaction-badge" data-emoji="{{ emoji }}">
+                                <span>{{ emoji }}</span>
+                                <span class="count">{{ reactions|length }}</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <!-- Seen indicator will be added here by JS -->
                 </div>
             </div>
         {% endfor %}
@@ -37,72 +123,169 @@
     </div>
     {% else %}
     <div class="message-composer">
-        <form>
+        <form method="post" action="javascript:void(0);">
             <input type="text" name="body" placeholder="Type a message..." autocomplete="off" required>
             <button type="submit"><i class="fas fa-paper-plane"></i></button>
         </form>
     </div>
     {% endif %}
 </div>
+
+<!-- Reactions Popup -->
+<div id="reactions-popup" class="reactions-popup">
+    <span>👍</span>
+    <span>❤️</span>
+    <span>😂</span>
+    <span>😮</span>
+    <span>😢</span>
+    <span>🙏</span>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
 <script type="text/javascript">
-    document.addEventListener('DOMContentLoaded', function() {
-        var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
-        var conversationId = "{{ conversation.id }}";
+document.addEventListener('DOMContentLoaded', function() {
+    // --- SETUP ---
+    var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+    const messageList = document.querySelector('.message-list');
+    var conversationId = messageList.dataset.conversationId;
+    const otherUserId = {{ other_user.id if other_user else 'null' }};
+    const currentUserId = {{ g.user.id }};
+    const lastSeenIdByOther = {{ other_participant.last_seen_message_id if other_participant and other_participant.last_seen_message_id else 'null' }};
+    const messageInput = document.querySelector('input[name="body"]');
+    const messageForm = document.querySelector('.message-composer form');
+    const typingIndicator = document.querySelector('.typing-indicator');
+    const reactionsPopup = document.getElementById('reactions-popup');
+    let currentMessageIdForReaction = null;
 
-        // Join the conversation room
-        socket.on('connect', function() {
-            socket.emit('join', {room: conversationId});
-        });
+    // --- HELPER FUNCTIONS ---
+    function addSeenIndicator(messageId) {
+        document.querySelectorAll('.seen-indicator').forEach(el => el.remove());
+        const messageContainer = document.querySelector(`.message-bubble-container[data-message-id='${messageId}']`);
+        if (messageContainer && messageContainer.classList.contains('sent')) {
+            const metaContainer = messageContainer.querySelector('.message-meta');
+            if (metaContainer && !metaContainer.querySelector('.seen-indicator')) {
+                const seenIndicator = document.createElement('small');
+                seenIndicator.className = 'seen-indicator';
+                seenIndicator.textContent = 'Seen';
+                metaContainer.appendChild(seenIndicator);
+            }
+        }
+    }
 
-        // Listen for new messages
-        socket.on('new_message', function(msg) {
-            const messageList = document.querySelector('.message-list');
-            const currentUserId = {{ g.user.id }};
+    function updateReaction(data) {
+        const messageContainer = document.querySelector(`.message-bubble-container[data-message-id='${data.message_id}']`);
+        if (!messageContainer) return;
 
-            // Don't append the message if we sent it (it's already handled by the form submission logic)
-            // No, the form submission logic now just emits, it doesn't add to the DOM.
-            // So we need to render the message for everyone, including the sender.
+        const reactionsContainer = messageContainer.querySelector('.reactions-container');
+        if (!reactionsContainer) return;
 
-            // Create new message bubble
-            const bubbleContainer = document.createElement('div');
-            bubbleContainer.classList.add('message-bubble-container');
-            if (msg.user_id === currentUserId) {
-                bubbleContainer.classList.add('sent');
+        let reactionBadge = reactionsContainer.querySelector(`.reaction-badge[data-emoji='${data.emoji}']`);
+        if (reactionBadge) {
+            let countEl = reactionBadge.querySelector('.count');
+            let currentCount = parseInt(countEl.textContent, 10);
+            let newCount = data.action === 'added' ? currentCount + 1 : currentCount - 1;
+
+            if (newCount > 0) {
+                countEl.textContent = newCount;
             } else {
-                bubbleContainer.classList.add('received');
+                reactionBadge.remove();
             }
+        } else if (data.action === 'added') {
+            reactionBadge = document.createElement('div');
+            reactionBadge.className = 'reaction-badge';
+            reactionBadge.dataset.emoji = data.emoji;
+            reactionBadge.innerHTML = `<span>${data.emoji}</span><span class="count">1</span>`;
+            reactionsContainer.appendChild(reactionBadge);
+        }
+    }
 
-            const bubble = document.createElement('div');
-            bubble.classList.add('message-bubble');
-            const p = document.createElement('p');
-            p.textContent = msg.body;
-            bubble.appendChild(p);
-            bubbleContainer.appendChild(bubble);
+    // --- SOCKET.IO EVENT HANDLERS ---
+    socket.on('connect', () => socket.emit('join', {room: conversationId}));
 
-            messageList.appendChild(bubbleContainer);
-            // Scroll to the bottom
-            messageList.scrollTop = messageList.scrollHeight;
-        });
+    socket.on('new_message', msg => {
+        if (msg.user_id === otherUserId && typingIndicator) typingIndicator.style.display = 'none';
 
-        // Handle form submission
-        const form = document.querySelector('.message-composer form');
-        form.addEventListener('submit', function(e) {
-            e.preventDefault();
-            let messageInput = document.querySelector('input[name="body"]');
-            let message = messageInput.value;
-            if (message.trim() !== '') {
-                socket.emit('send_message', {room: conversationId, message: message});
-                messageInput.value = ''; // Clear input field
-            }
-        });
+        const bubbleContainer = document.createElement('div');
+        bubbleContainer.className = `message-bubble-container ${msg.user_id === currentUserId ? 'sent' : 'received'}`;
+        bubbleContainer.dataset.messageId = msg.id;
+        bubbleContainer.innerHTML = `
+            <div class="message-bubble"><p>${msg.body}</p></div>
+            <div class="message-meta"><div class="reactions-container"></div></div>
+        `;
 
-        // Scroll to the bottom of the message list on page load
-        const messageList = document.querySelector('.message-list');
+        messageList.appendChild(bubbleContainer);
         messageList.scrollTop = messageList.scrollHeight;
+        setTimeout(() => observer.observe(bubbleContainer), 100);
     });
+
+    socket.on('user_typing', data => { if (data.user_id === otherUserId && typingIndicator) typingIndicator.style.display = 'inline'; });
+    socket.on('user_stopped_typing', data => { if (data.user_id === otherUserId && typingIndicator) typingIndicator.style.display = 'none'; });
+    socket.on('message_was_seen', data => { if (data.user_id === otherUserId) addSeenIndicator(data.message_id); });
+    socket.on('reaction_added', data => updateReaction({ ...data, action: 'added' }));
+    socket.on('reaction_removed', data => updateReaction({ ...data, action: 'removed' }));
+
+    // --- DOM EVENT LISTENERS ---
+    if (messageForm) {
+        messageForm.addEventListener('submit', e => {
+            e.preventDefault();
+            let message = messageInput.value;
+            if (message.trim()) {
+                clearTimeout(typingTimer);
+                socket.emit('typing_stop', {room: conversationId});
+                socket.emit('send_message', {room: conversationId, message: message});
+                messageInput.value = '';
+            }
+        });
+    }
+
+    let typingTimer;
+    if (messageInput) {
+        messageInput.addEventListener('input', () => {
+            clearTimeout(typingTimer);
+            socket.emit('typing_start', {room: conversationId});
+            typingTimer = setTimeout(() => socket.emit('typing_stop', {room: conversationId}), 1500);
+        });
+    }
+
+    messageList.addEventListener('click', e => {
+        const bubble = e.target.closest('.message-bubble');
+        if (bubble) {
+            const container = bubble.closest('.message-bubble-container');
+            currentMessageIdForReaction = container.dataset.messageId;
+            reactionsPopup.style.display = 'block';
+            container.appendChild(reactionsPopup);
+        } else if (!e.target.closest('.reactions-popup')) {
+            reactionsPopup.style.display = 'none';
+        }
+    });
+
+    reactionsPopup.addEventListener('click', e => {
+        if (e.target.tagName === 'SPAN') {
+            const emoji = e.target.textContent;
+            fetch(`/chat/message/${currentMessageIdForReaction}/react`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ emoji: emoji })
+            });
+            reactionsPopup.style.display = 'none';
+        }
+    });
+
+    // --- INTERSECTION OBSERVER FOR SEEN STATUS ---
+    const observer = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting && entry.target.classList.contains('received')) {
+                socket.emit('message_seen', {room: conversationId, message_id: parseInt(entry.target.dataset.messageId)});
+            }
+        });
+    }, { root: null, threshold: 0.9 });
+
+    // --- INITIALIZATION ---
+    messageList.scrollTop = messageList.scrollHeight;
+    document.querySelectorAll('.message-bubble-container').forEach(msg => observer.observe(msg));
+    if (lastSeenIdByOther) addSeenIndicator(lastSeenIdByOther);
+});
 </script>
 {% endblock %}
