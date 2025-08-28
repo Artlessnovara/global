@@ -10,8 +10,26 @@ from flask.cli import with_appcontext
 from functools import wraps
 import humanize
 from flask_socketio import SocketIO, emit, join_room, leave_room
+from markupsafe import Markup
+import re
 
 app = Flask(__name__)
+
+@app.template_filter('linkify_mentions')
+def linkify_mentions_filter(text):
+    if not text:
+        return text
+    def replace_mention(match):
+        username = match.group(1)
+        user = User.query.filter_by(username=username).first()
+        if user:
+            url = url_for('profile', username=username)
+            return f'<a href="{url}">@{username}</a>'
+        else:
+            return f'@{username}'
+
+    pattern = r'(?<!\S)@([a-zA-Z0-9_]+)'
+    return Markup(re.sub(pattern, replace_mention, text))
 
 @app.template_filter('humanize_time')
 def _jinja2_filter_humanize_time(dt):
@@ -169,6 +187,8 @@ class Participant(db.Model):
     last_read_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     status = db.Column(db.String(20), default='active', nullable=False)
     role = db.Column(db.String(20), nullable=False, default='member') # 'admin' or 'member'
+    is_pinned = db.Column(db.Boolean, default=False, nullable=False)
+    muted_until = db.Column(db.DateTime, nullable=True)
     last_seen_message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=True)
     user = db.relationship('User', back_populates='conversations')
     conversation = db.relationship('Conversation', back_populates='participants')
@@ -216,6 +236,7 @@ class Message(db.Model):
     # Self-referential relationship for message replies
     parent_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=True)
     parent = db.relationship('Message', remote_side=[id], backref='replies', lazy='joined')
+    is_pinned = db.Column(db.Boolean, default=False, nullable=False)
 
 class Notification(db.Model):
     __tablename__ = 'notifications'
@@ -784,6 +805,35 @@ def leave_group(conversation_id):
     flash('You have left the group.', 'success')
     return redirect(url_for('chat_inbox'))
 
+@app.route('/chat/conversation/<int:conversation_id>/mute', methods=['POST'])
+@login_required
+def mute_conversation(conversation_id):
+    participant = Participant.query.filter_by(user_id=g.user.id, conversation_id=conversation_id).first_or_404()
+    duration = request.json.get('duration') # e.g., '8h', '1d', 'forever', 'unmute'
+
+    if duration == 'unmute':
+        participant.muted_until = None
+        flash('Conversation unmuted.', 'success')
+    elif duration == 'forever':
+        # Set a far-future date for 'forever'
+        participant.muted_until = datetime.now(timezone.utc) + timedelta(days=365*100)
+        flash('Conversation muted forever.', 'success')
+    else:
+        # Simple parsing for 'h' (hours) and 'd' (days)
+        now = datetime.now(timezone.utc)
+        if duration.endswith('h'):
+            hours = int(duration[:-1])
+            participant.muted_until = now + timedelta(hours=hours)
+        elif duration.endswith('d'):
+            days = int(duration[:-1])
+            participant.muted_until = now + timedelta(days=days)
+        else:
+            return {'error': 'Invalid duration'}, 400
+        flash(f'Conversation muted for {duration}.', 'success')
+
+    db.session.commit()
+    return {'success': True}
+
 
 @app.route('/chat/<int:conversation_id>')
 @login_required
@@ -1128,6 +1178,25 @@ def delete_message(message_id):
 
     return {'success': True}, 200
 
+@app.route('/chat/message/<int:message_id>/pin', methods=['POST'])
+@login_required
+def pin_message(message_id):
+    message = db.get_or_404(Message, message_id)
+    convo = message.conversation
+    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+    if not participant or participant.role != 'admin':
+        return {'error': 'Forbidden'}, 403
+
+    message.is_pinned = not message.is_pinned # Toggle pin status
+    db.session.commit()
+
+    socketio.emit('message_pin_status_changed', {
+        'message_id': message.id,
+        'is_pinned': message.is_pinned
+    }, room=str(convo.id))
+
+    return {'success': True, 'is_pinned': message.is_pinned}
+
 @app.route('/chat/conversations')
 @login_required
 def get_conversations():
@@ -1174,6 +1243,22 @@ def handle_send_message_event(data):
         shared_post_id=data.get('shared_post_id')
     )
     db.session.add(new_message)
+
+    # Handle mentions
+    if new_message.body:
+        mentioned_usernames = re.findall(r'(?<!\S)@([a-zA-Z0-9_]+)', new_message.body)
+        if mentioned_usernames:
+            mentioned_users = User.query.filter(User.username.in_(mentioned_usernames)).all()
+            for user in mentioned_users:
+                if user.id != new_message.user_id: # Don't notify for self-mentions
+                    notification = Notification(
+                        recipient_id=user.id,
+                        sender_id=new_message.user_id,
+                        type='mention',
+                        related_id=new_message.conversation_id
+                    )
+                    db.session.add(notification)
+
     db.session.commit()
 
     parent_message_data = None

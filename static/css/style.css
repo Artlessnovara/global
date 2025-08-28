@@ -1693,6 +1693,40 @@ body:has(.main-nav) {
     max-width: 100%;
     border-radius: 15px;
 }
+
+/* Pinned Message Banner */
+.pinned-message-banner {
+    display: flex;
+    align-items: center;
+    padding: 10px 15px;
+    background-color: #f7f7f7;
+    border-bottom: 1px solid #dbdbdb;
+}
+.pinned-message-banner .fa-thumbtack {
+    color: #8e8e8e;
+    margin-right: 10px;
+}
+.pinned-message-content {
+    flex-grow: 1;
+}
+.pinned-message-content strong {
+    font-size: 13px;
+    display: block;
+}
+.pinned-message-content p {
+    font-size: 14px;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#close-pinned-banner {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #8e8e8e;
+}
 .message-bubble > .chat-media-photo, .message-bubble > .chat-media-video {
     margin-bottom: 5px;
 }
