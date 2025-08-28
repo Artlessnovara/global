@@ -64,6 +64,7 @@ class User(db.Model):
     country = db.Column(db.String(100), nullable=True)
 
     posts = db.relationship('Post', backref='author', lazy='dynamic')
+    comments = db.relationship('Comment', backref='author', lazy='dynamic')
     stories = db.relationship('Story', backref='author', lazy=True)
     reactions = db.relationship('Reaction', backref='user', lazy='dynamic')
     conversations = db.relationship('Participant', back_populates='user', cascade="all, delete-orphan")
@@ -129,6 +130,15 @@ class Post(db.Model):
     mode = db.Column(db.String(50), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     reactions = db.relationship('Reaction', backref='post', lazy='dynamic')
+    comments = db.relationship('Comment', backref='post', lazy='dynamic', cascade="all, delete-orphan")
+
+class Comment(db.Model):
+    __tablename__ = 'comments'
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=False)
 
 class Story(db.Model):
     __tablename__ = 'stories'
@@ -679,7 +689,36 @@ def notifications():
 def post_detail(post_id):
     """Displays a single post in detail."""
     post = db.get_or_404(Post, post_id)
-    return render_template('post_detail.html', post=post)
+    comments = post.comments.order_by(Comment.created_at.asc()).all()
+    return render_template('post_detail.html', post=post, comments=comments)
+
+@app.route('/post/<int:post_id>/comment', methods=['POST'])
+@login_required
+def add_comment(post_id):
+    post = db.get_or_404(Post, post_id)
+    comment_text = request.form.get('comment_text')
+
+    if not comment_text:
+        flash('Comment cannot be empty.', 'error')
+        return redirect(url_for('post_detail', post_id=post.id))
+
+    comment = Comment(text=comment_text, user_id=g.user.id, post_id=post.id)
+    db.session.add(comment)
+
+    # Create a notification for the post author, but not if they are commenting on their own post
+    if post.author.id != g.user.id:
+        notification = Notification(
+            recipient_id=post.author.id,
+            sender_id=g.user.id,
+            type='comment',
+            related_id=post.id
+        )
+        db.session.add(notification)
+
+    db.session.commit()
+
+    flash('Your comment has been posted.', 'success')
+    return redirect(url_for('post_detail', post_id=post.id))
 
 @app.route('/notifications/read/<int:notification_id>', methods=['POST'])
 @login_required

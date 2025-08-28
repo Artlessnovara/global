@@ -37,6 +37,8 @@
                                     <strong>{{ notification.sender.username }}</strong> liked your post.
                                 {% elif notification.type == 'follow' %}
                                     <strong>{{ notification.sender.username }}</strong> started following you.
+                            {% elif notification.type == 'comment' %}
+                                <strong>{{ notification.sender.username }}</strong> commented on your post.
                             {% elif notification.type == 'achievement' %}
                                 Congratulations! You've reached <strong>{{ notification.related_id }}</strong> followers! 🎉
                                 {% else %}

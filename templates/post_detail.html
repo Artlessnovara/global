@@ -8,12 +8,37 @@
         {% if post %}
             {% include '_post_card.html' %}
 
-            <!-- Comment section placeholder -->
-            <div class="comments-section" style="margin-top: 20px;">
+            <!-- Add Comment Form -->
+            <div class="add-comment-form">
+                <form method="POST" action="{{ url_for('add_comment', post_id=post.id) }}">
+                    <textarea name="comment_text" placeholder="Add a comment..." required></textarea>
+                    <button type="submit">Post</button>
+                </form>
+            </div>
+
+            <!-- Comments Section -->
+            <div class="comments-section">
                 <h3>Comments</h3>
-                <div class="post-placeholder">
-                    <p>Comments are coming soon!</p>
-                </div>
+                {% if comments %}
+                    {% for comment in comments %}
+                        <div class="comment-item">
+                            <a href="{{ url_for('profile', username=comment.author.username) }}">
+                                <img src="https://i.pravatar.cc/150?u={{ comment.author.username }}" alt="{{ comment.author.username }}'s avatar" class="comment-avatar">
+                            </a>
+                            <div class="comment-content">
+                                <p>
+                                    <a href="{{ url_for('profile', username=comment.author.username) }}" class="comment-author-name">{{ comment.author.username }}</a>
+                                    {{ comment.text }}
+                                </p>
+                                <div class="comment-meta">
+                                    <span>{{ comment.created_at|humanize_time }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p>No comments yet.</p>
+                {% endif %}
             </div>
         {% else %}
             <div class="post-placeholder">
