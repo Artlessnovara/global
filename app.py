@@ -202,6 +202,8 @@ class Message(db.Model):
     body = db.Column(db.Text, nullable=True)
     content_type = db.Column(db.String(20), nullable=False, default='text')
     content_path = db.Column(db.String(255), nullable=True)
+    shared_post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
+    shared_post = db.relationship('Post', lazy='joined')
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     sender = db.relationship('User')
     reactions = db.relationship('MessageReaction', backref='message', cascade="all, delete-orphan")
@@ -912,6 +914,29 @@ def delete_message(message_id):
 
     return {'success': True}, 200
 
+@app.route('/chat/conversations')
+@login_required
+def get_conversations():
+    user_participant_entries = Participant.query.filter_by(user_id=g.user.id, status='active').all()
+    conversations_data = []
+    for p_entry in user_participant_entries:
+        convo = p_entry.conversation
+        if convo.is_group:
+            name = convo.name
+            image = url_for('static', filename=convo.group_photo_path) if convo.group_photo_path else url_for('static', filename='img/default-avatar.png')
+        else:
+            other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
+            if not other_user: continue
+            name = other_user.full_name
+            image = url_for('static', filename='img/default-avatar.png') # Placeholder
+
+        conversations_data.append({
+            'id': convo.id,
+            'name': name,
+            'image': image
+        })
+    return {'conversations': conversations_data}
+
 # --- SOCKETIO EVENTS ---
 @socketio.on('send_message')
 def handle_send_message_event(data):
@@ -931,7 +956,8 @@ def handle_send_message_event(data):
         body=data.get('message'),
         parent_id=data.get('parent_id'),
         content_type=data.get('content_type', 'text'),
-        content_path=data.get('content_path')
+        content_path=data.get('content_path'),
+        shared_post_id=data.get('shared_post_id')
     )
     db.session.add(new_message)
     db.session.commit()
@@ -943,6 +969,16 @@ def handle_send_message_event(data):
             'author_name': new_message.parent.sender.full_name
         }
 
+    shared_post_data = None
+    if new_message.shared_post:
+        shared_post_data = {
+            'id': new_message.shared_post.id,
+            'text': new_message.shared_post.text,
+            'author_name': new_message.shared_post.author.full_name,
+            'content_path': new_message.shared_post.content_path,
+            'content_type': new_message.shared_post.content_type
+        }
+
     message_data = {
         'id': new_message.id,
         'body': new_message.body,
@@ -952,7 +988,8 @@ def handle_send_message_event(data):
         'created_at': new_message.created_at.isoformat(),
         'parent': parent_message_data,
         'content_type': new_message.content_type,
-        'content_path': new_message.content_path
+        'content_path': new_message.content_path,
+        'shared_post': shared_post_data
     }
     emit('new_message', message_data, room=data['room'])
 

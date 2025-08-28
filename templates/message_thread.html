@@ -84,6 +84,18 @@
                         <img src="{{ url_for('static', filename=message.content_path) }}" class="chat-media-photo" alt="User uploaded photo">
                     {% elif message.content_type == 'video' %}
                         <video src="{{ url_for('static', filename=message.content_path) }}" class="chat-media-video" controls></video>
+                    {% elif message.content_type == 'shared_post' %}
+                        <div class="shared-post-card">
+                            <a href="{{ url_for('post_detail', post_id=message.shared_post.id) }}">
+                                {% if message.shared_post.content_type in ['photo', 'video'] %}
+                                    <img src="{{ url_for('static', filename=message.shared_post.content_path) }}" class="shared-post-media" alt="Shared post media">
+                                {% endif %}
+                                <div class="shared-post-info">
+                                    <strong>{{ message.shared_post.author.full_name }}</strong>
+                                    <p>{{ message.shared_post.text | truncate(100) }}</p>
+                                </div>
+                            </a>
+                        </div>
                     {% endif %}
                     {% if message.body %}
                         <p>{{ message.body }}</p>
@@ -141,9 +153,14 @@
                     <button type="button" id="photo-video-btn"><i class="fas fa-photo-video"></i> Photo/Video</button>
                     <button type="button"><i class="fas fa-file"></i> File</button>
                 </div>
+                <button type="button" class="composer-btn"><i class="fas fa-camera"></i></button>
+                <button type="button" class="composer-btn"><i class="fas fa-microphone"></i></button>
             </div>
             <input type="hidden" id="reply-parent-id" name="parent_id" value="">
-            <textarea id="message-input" name="body" placeholder="Type a message..." rows="1" autocomplete="off" required></textarea>
+            <div class="composer-input-container">
+                <textarea id="message-input" name="body" placeholder="Type a message..." rows="1" autocomplete="off" required></textarea>
+                <button type="button" class="composer-btn emoji-btn"><i class="fas fa-smile"></i></button>
+            </div>
             <button type="submit" id="send-btn"><i class="fas fa-paper-plane"></i></button>
         </form>
     </div>
@@ -171,11 +188,9 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
 <script type="text/javascript">
     document.addEventListener('DOMContentLoaded', function() {
     // --- SETUP ---
-    var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
     const messageList = document.querySelector('.message-list');
     var conversationId = messageList.dataset.conversationId;
     const otherUserId = {{ other_user.id if other_user else 'null' }};
@@ -240,6 +255,22 @@
             mediaHTML = `<img src="/static/${msg.content_path}" class="chat-media-photo" alt="User uploaded photo">`;
         } else if (msg.content_type === 'video') {
             mediaHTML = `<video src="/static/${msg.content_path}" class="chat-media-video" controls></video>`;
+        } else if (msg.content_type === 'shared_post' && msg.shared_post) {
+            let post_media = '';
+            if (msg.shared_post.content_type === 'photo' || msg.shared_post.content_type === 'video') {
+                post_media = `<img src="/static/${msg.shared_post.content_path}" class="shared-post-media" alt="Shared post media">`;
+            }
+            mediaHTML = `
+                <div class="shared-post-card">
+                    <a href="/post/${msg.shared_post.id}">
+                        ${post_media}
+                        <div class="shared-post-info">
+                            <strong>${msg.shared_post.author_name}</strong>
+                            <p>${msg.shared_post.text.substring(0, 100)}</p>
+                        </div>
+                    </a>
+                </div>
+            `;
         }
 
         let bodyHTML = msg.body ? `<p>${msg.body}</p>` : '';

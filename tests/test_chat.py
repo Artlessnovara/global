@@ -1,7 +1,7 @@
 import pytest
 import io
 from tests.test_auth import register_user, login, logout
-from app import db, User, Conversation, Message, Participant, socketio
+from app import db, User, Conversation, Message, Participant, socketio, Post
 
 def test_start_new_chat(client):
     """Test starting a new conversation."""
@@ -240,3 +240,46 @@ def test_delete_message(client, app):
     received = socketio_client.get_received()
     assert received[0]['name'] == 'message_deleted'
     assert received[0]['args'][0]['message_id'] == message_id
+
+def test_send_shared_post_message(client, app):
+    """Test sending a message that shares a post."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+    post_author = register_user(username='poster', email='poster@test.com', password='pw')
+
+    # Create conversation and post
+    convo = Conversation()
+    p1 = Participant(user=user1, conversation=convo)
+    p2 = Participant(user=user2, conversation=convo)
+    shared_post = Post(author=post_author, content_type='text', text='A post to be shared', mode='Test')
+    db.session.add_all([convo, p1, p2, shared_post])
+    db.session.commit()
+
+    login(client, 'user1', 'pw')
+    socketio_client = socketio.test_client(app, flask_test_client=client)
+    socketio_client.emit('join', {'room': str(convo.id)})
+    socketio_client.emit('send_message', {
+        'room': str(convo.id),
+        'content_type': 'shared_post',
+        'shared_post_id': shared_post.id
+    })
+
+    # Check the socket response
+    received = socketio_client.get_received()
+    assert received[0]['name'] == 'new_message'
+    message_data = received[0]['args'][0]
+    assert message_data['content_type'] == 'shared_post'
+    assert message_data['shared_post']['id'] == shared_post.id
+    assert message_data['shared_post']['author_name'] == post_author.full_name
+
+    # Check the database
+    message = Message.query.filter_by(content_type='shared_post').first()
+    assert message is not None
+    assert message.shared_post_id == shared_post.id
+
+    # Check the rendered HTML
+    response = client.get(f'/chat/{convo.id}')
+    assert response.status_code == 200
+    assert b'shared-post-card' in response.data
+    assert bytes(shared_post.text, 'utf-8') in response.data
+    assert bytes(post_author.full_name, 'utf-8') in response.data
