@@ -199,7 +199,9 @@ class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    body = db.Column(db.Text, nullable=False)
+    body = db.Column(db.Text, nullable=True)
+    content_type = db.Column(db.String(20), nullable=False, default='text')
+    content_path = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     sender = db.relationship('User')
     reactions = db.relationship('MessageReaction', backref='message', cascade="all, delete-orphan")
@@ -860,6 +862,56 @@ def react_to_message(message_id):
         }, room=str(message.conversation.id))
         return {'status': 'added'}, 201
 
+@app.route('/chat/conversation/<int:conversation_id>/upload_media', methods=['POST'])
+@login_required
+def upload_chat_media(conversation_id):
+    participant = Participant.query.filter_by(user_id=g.user.id, conversation_id=conversation_id).first()
+    if not participant:
+        return {'error': 'Forbidden'}, 403
+
+    if 'media_file' not in request.files:
+        return {'error': 'No file part'}, 400
+
+    file = request.files['media_file']
+    if file.filename == '':
+        return {'error': 'No selected file'}, 400
+
+    if file:
+        filename = secure_filename(file.filename)
+        chat_media_dir = os.path.join(app.static_folder, 'chat_media')
+        os.makedirs(chat_media_dir, exist_ok=True)
+
+        unique_filename = f"{g.user.id}_{int(datetime.now(timezone.utc).timestamp())}_{filename}"
+        file_path = os.path.join(chat_media_dir, unique_filename)
+        file.save(file_path)
+
+        relative_path = os.path.join('chat_media', unique_filename)
+
+        content_type = 'photo' if file.mimetype.startswith('image/') else 'video'
+
+        return {'success': True, 'content_path': relative_path, 'content_type': content_type}, 200
+
+    return {'error': 'File upload failed'}, 500
+
+@app.route('/chat/message/<int:message_id>/delete', methods=['POST'])
+@login_required
+def delete_message(message_id):
+    message = db.get_or_404(Message, message_id)
+    if message.user_id != g.user.id:
+        return {'error': 'Forbidden'}, 403
+
+    # Optional: Add a time limit for deletion
+    # time_since_sent = datetime.now(timezone.utc) - message.created_at
+    # if time_since_sent.total_seconds() > 300: # 5 minutes
+    #     return {'error': 'Too late to delete'}, 403
+
+    db.session.delete(message)
+    db.session.commit()
+
+    socketio.emit('message_deleted', {'message_id': message_id}, room=str(message.conversation_id))
+
+    return {'success': True}, 200
+
 # --- SOCKETIO EVENTS ---
 @socketio.on('send_message')
 def handle_send_message_event(data):
@@ -876,8 +928,10 @@ def handle_send_message_event(data):
     new_message = Message(
         conversation_id=data['room'],
         user_id=user_id,
-        body=data['message'],
-        parent_id=parent_id
+        body=data.get('message'),
+        parent_id=data.get('parent_id'),
+        content_type=data.get('content_type', 'text'),
+        content_path=data.get('content_path')
     )
     db.session.add(new_message)
     db.session.commit()
@@ -896,7 +950,9 @@ def handle_send_message_event(data):
         'author_username': new_message.sender.username,
         'user_id': new_message.user_id,
         'created_at': new_message.created_at.isoformat(),
-        'parent': parent_message_data
+        'parent': parent_message_data,
+        'content_type': new_message.content_type,
+        'content_path': new_message.content_path
     }
     emit('new_message', message_data, room=data['room'])
 
