@@ -131,6 +131,12 @@ class Post(db.Model):
     text = db.Column(db.Text, nullable=True)
     mode = db.Column(db.String(50), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Sharing and reposting fields
+    share_count = db.Column(db.Integer, default=0, nullable=False)
+    original_post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
+    original_post = db.relationship('Post', remote_side=[id], backref='reposts')
+
     reactions = db.relationship('Reaction', backref='post', lazy='dynamic')
     comments = db.relationship('Comment', backref='post', lazy='dynamic', cascade="all, delete-orphan")
 
@@ -258,9 +264,9 @@ class Notification(db.Model):
     recipient = db.relationship('User', foreign_keys=[recipient_id], backref='notifications')
     sender = db.relationship('User', foreign_keys=[sender_id])
 
-    # Define a relationship to the Post model for 'like' notifications
+    # Define a relationship to the Post model for various notification types
     related_post = db.relationship('Post',
-        primaryjoin="and_(Notification.type=='like', foreign(Notification.related_id)==Post.id)",
+        primaryjoin="and_(Notification.type.in_(['like', 'comment', 'share']), foreign(Notification.related_id)==Post.id)",
         uselist=False,
         viewonly=True)
 
@@ -320,6 +326,10 @@ def inject_unread_count():
 @app.context_processor
 def inject_datetime():
     return {'datetime': datetime, 'timezone': timezone}
+
+@app.context_processor
+def inject_models():
+    return dict(Comment=Comment)
 
 def login_required(f):
     @wraps(f)
@@ -1006,7 +1016,7 @@ def notifications():
     ).filter_by(recipient_id=g.user.id)
 
     # Apply filter if one is provided
-    if active_filter in ['like', 'follow']: # Add other types here as they are implemented
+    if active_filter in ['like', 'follow', 'comment', 'share']:
         query = query.filter_by(type=active_filter)
 
     user_notifications = query.order_by(Notification.created_at.desc()).all()
@@ -1112,6 +1122,48 @@ def delete_comment(comment_id):
     delete_replies(comment)
     db.session.commit()
     return {'status': 'success'}
+
+@app.route('/post/<int:post_id>/share', methods=['POST'])
+@login_required
+def share_post(post_id):
+    original_post = db.get_or_404(Post, post_id)
+    quote_text = request.form.get('quote_text', None) # Optional text from the user
+
+    # Prevent sharing a repost
+    if original_post.original_post_id:
+        flash('You cannot share a post that is already a share.', 'error')
+        return redirect(request.referrer or url_for('home'))
+
+    # Create the new post (the share/repost)
+    new_post = Post(
+        user_id=g.user.id,
+        text=quote_text, # This will be the user's quote
+        original_post_id=original_post.id,
+        # Copy relevant fields from the original post
+        content_type=original_post.content_type,
+        content_path=original_post.content_path,
+        mode=original_post.mode
+    )
+
+    # Increment the share count on the original post
+    original_post.share_count += 1
+
+    db.session.add(new_post)
+
+    # Create a notification for the original author
+    if original_post.author.id != g.user.id:
+        notification = Notification(
+            recipient_id=original_post.author.id,
+            sender_id=g.user.id,
+            type='share',
+            related_id=original_post.id
+        )
+        db.session.add(notification)
+
+    db.session.commit()
+
+    flash('Post shared successfully!', 'success')
+    return redirect(url_for('home'))
 
 @app.route('/notifications/read/<int:notification_id>', methods=['POST'])
 @login_required
