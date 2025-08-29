@@ -1450,27 +1450,55 @@ def on_leave(data):
     leave_room(room)
 
 # --- WebRTC Signaling Events ---
-@socketio.on('call-user')
-def handle_call_user(data):
-    # Relay the call offer to the other user in the room
-    emit('call-made', {
-        'offer': data['offer'],
-        'sid': request.sid
-    }, room=data['to'])
+# In-memory store for room participants. Not suitable for production with multiple workers.
+call_rooms = {}
 
-@socketio.on('make-answer')
-def handle_make_answer(data):
-    # Relay the answer back to the original caller
-    emit('answer-made', {
-        'answer': data['answer']
-    }, room=data['to'])
+@socketio.on('join-call-room')
+def handle_join_call_room(data):
+    room = data['room']
+    sid = request.sid
+    join_room(room)
+
+    # Get existing users in the room
+    existing_sids = call_rooms.get(room, [])
+
+    # Send existing users to the new user
+    emit('existing-peers', existing_sids, room=sid)
+
+    # Add new user to the room's user list
+    if room not in call_rooms:
+        call_rooms[room] = []
+    call_rooms[room].append(sid)
+
+    # Announce the new user to all other users
+    emit('new-peer', {'sid': sid}, broadcast=True, include_self=False, room=room)
+
+@socketio.on('offer')
+def handle_offer(data):
+    emit('offer', {'offer': data['offer'], 'from_sid': request.sid}, room=data['to_sid'])
+
+@socketio.on('answer')
+def handle_answer(data):
+    emit('answer', {'answer': data['answer'], 'from_sid': request.sid}, room=data['to_sid'])
 
 @socketio.on('ice-candidate')
 def handle_ice_candidate(data):
-    # Relay ICE candidates to the other peer
-    emit('ice-candidate', {
-        'candidate': data['candidate']
-    }, room=data['to'])
+    emit('ice-candidate', {'candidate': data['candidate'], 'from_sid': request.sid}, room=data['to_sid'])
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    sid = request.sid
+    # Find which room the user was in and remove them
+    room_to_leave = None
+    for room, sids in call_rooms.items():
+        if sid in sids:
+            sids.remove(sid)
+            room_to_leave = room
+            break
+
+    if room_to_leave:
+        # Announce user has left
+        emit('peer-left', {'sid': sid}, broadcast=True, room=room_to_leave)
 
 
 if __name__ == '__main__':

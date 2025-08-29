@@ -1,8 +1,6 @@
 let localStream;
-let remoteStream;
-let peerConnection;
+const peerConnections = new Map();
 let socket;
-let otherUserId;
 let conversationId;
 
 const servers = {
@@ -13,98 +11,127 @@ const servers = {
     ],
 };
 
-async function init(convoId, currentUserId, otherId) {
+async function init(convoId) {
     conversationId = convoId;
-    otherUserId = otherId;
     socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
 
-    // --- Get local media ---
     try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         document.getElementById('local-video').srcObject = localStream;
     } catch (error) {
         console.error("Error accessing media devices.", error);
-        alert("Could not access your camera and microphone. Please check permissions.");
+        alert("Could not access camera/microphone.");
         return;
     }
 
     setupSocketListeners();
-
-    // If otherUserId is present, this client is the initiator
-    if (otherUserId) {
-        // Find the SID of the other user to send a direct call
-        // This is a simplification. A real app would have a more robust user/SID mapping.
-        // For now, we'll emit to the room and the other client will pick it up.
-        console.log("Attempting to call user in room:", conversationId);
-        createPeerConnection();
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-
-        socket.emit('call-user', {
-            offer,
-            to: conversationId, // Emitting to the conversation room
-        });
-    }
-
     addControlListeners();
+
+    socket.emit('join-call-room', { room: conversationId });
 }
 
 function setupSocketListeners() {
-    socket.on('call-made', async (data) => {
-        console.log("Receiving call...", data);
-        // Callee receives the offer
-        if (!otherUserId) { // This client is the callee
-            createPeerConnection();
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-
-            socket.emit('make-answer', {
-                answer,
-                to: data.sid, // Send answer back directly to the caller's SID
-            });
-        }
+    socket.on('existing-peers', (sids) => {
+        console.log('Existing peers:', sids);
+        sids.forEach(sid => {
+            createPeerConnection(sid, true);
+        });
     });
 
-    socket.on('answer-made', async (data) => {
-        console.log("Answer received.", data);
-        // Caller receives the answer
-        if (otherUserId) {
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-        }
+    socket.on('new-peer', (data) => {
+        console.log('New peer joined:', data.sid);
+        createPeerConnection(data.sid, false);
+    });
+
+    socket.on('offer', async (data) => {
+        console.log('Offer received from:', data.from_sid);
+        const pc = getPeerConnection(data.from_sid, false); // Important: initiator is false here
+        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('answer', { to_sid: data.from_sid, answer });
+    });
+
+    socket.on('answer', async (data) => {
+        console.log('Answer received from:', data.from_sid);
+        await getPeerConnection(data.from_sid).setRemoteDescription(new RTCSessionDescription(data.answer));
     });
 
     socket.on('ice-candidate', (data) => {
-        if (peerConnection) {
-            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        getPeerConnection(data.from_sid).addIceCandidate(new RTCIceCandidate(data.candidate));
+    });
+
+    socket.on('peer-left', (data) => {
+        console.log('Peer left:', data.sid);
+        if (peerConnections.has(data.sid)) {
+            peerConnections.get(data.sid).close();
+            peerConnections.delete(data.sid);
+        }
+        const videoContainer = document.getElementById(`container-${data.sid}`);
+        if (videoContainer) {
+            videoContainer.remove();
         }
     });
 }
 
-function createPeerConnection() {
-    peerConnection = new RTCPeerConnection(servers);
+function createPeerConnection(sid, isInitiator) {
+    if (peerConnections.has(sid)) return peerConnections.get(sid);
 
-    remoteStream = new MediaStream();
-    document.getElementById('remote-video').srcObject = remoteStream;
+    const pc = new RTCPeerConnection(servers);
+    peerConnections.set(sid, pc);
 
     localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
+        pc.addTrack(track, localStream);
     });
 
-    peerConnection.ontrack = (event) => {
-        event.streams[0].getTracks().forEach(track => {
-            remoteStream.addTrack(track);
-        });
+    pc.ontrack = (event) => {
+        addRemoteVideoStream(sid, event.streams[0]);
     };
 
-    peerConnection.onicecandidate = (event) => {
+    pc.onicecandidate = (event) => {
         if (event.candidate) {
-            socket.emit('ice-candidate', {
-                candidate: event.candidate,
-                to: conversationId, // Broadcast to the room
-            });
+            socket.emit('ice-candidate', { to_sid: sid, candidate: event.candidate });
         }
     };
+
+    if (isInitiator) {
+        pc.createOffer()
+            .then(offer => pc.setLocalDescription(offer))
+            .then(() => {
+                socket.emit('offer', { to_sid: sid, offer: pc.localDescription });
+            });
+    }
+    return pc;
+}
+
+function getPeerConnection(sid, isInitiator = false) {
+    if (!peerConnections.has(sid)) {
+        return createPeerConnection(sid, isInitiator);
+    }
+    return peerConnections.get(sid);
+}
+
+function addRemoteVideoStream(sid, stream) {
+    const videoGrid = document.getElementById('video-grid');
+    let videoContainer = document.getElementById(`container-${sid}`);
+    if (!videoContainer) {
+        videoContainer = document.createElement('div');
+        videoContainer.classList.add('video-container');
+        videoContainer.id = `container-${sid}`;
+
+        const videoElement = document.createElement('video');
+        videoElement.autoplay = true;
+        videoElement.playsInline = true;
+
+        const label = document.createElement('span');
+        label.classList.add('video-label');
+        label.textContent = `User ${sid.substring(0, 4)}`;
+
+        videoContainer.appendChild(videoElement);
+        videoContainer.appendChild(label);
+        videoGrid.appendChild(videoContainer);
+        videoElement.srcObject = stream;
+    }
 }
 
 function addControlListeners() {
@@ -114,35 +141,22 @@ function addControlListeners() {
 
     micBtn.addEventListener('click', () => {
         const audioTrack = localStream.getTracks().find(track => track.kind === 'audio');
-        if (audioTrack.enabled) {
-            audioTrack.enabled = false;
-            micBtn.innerHTML = '<i class="fas fa-microphone-slash"></i>';
-            micBtn.classList.remove('active');
-        } else {
-            audioTrack.enabled = true;
-            micBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-            micBtn.classList.add('active');
-        }
+        audioTrack.enabled = !audioTrack.enabled;
+        micBtn.innerHTML = audioTrack.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
     });
 
     cameraBtn.addEventListener('click', () => {
         const videoTrack = localStream.getTracks().find(track => track.kind === 'video');
-        if (videoTrack.enabled) {
-            videoTrack.enabled = false;
-            cameraBtn.innerHTML = '<i class="fas fa-video-slash"></i>';
-            cameraBtn.classList.remove('active');
-        } else {
-            videoTrack.enabled = true;
-            cameraBtn.innerHTML = '<i class="fas fa-video"></i>';
-            cameraBtn.classList.add('active');
-        }
+        videoTrack.enabled = !videoTrack.enabled;
+        cameraBtn.innerHTML = videoTrack.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
     });
 
     hangupBtn.addEventListener('click', () => {
-        if (peerConnection) {
-            peerConnection.close();
+        for (const pc of peerConnections.values()) {
+            pc.close();
         }
-        // Redirect back to the chat or home
+        peerConnections.clear();
+        if(socket) socket.disconnect();
         window.location.href = `/chat/${conversationId}`;
     });
 }
