@@ -45,58 +45,63 @@
                 {% for p_entry in active_chats %}
                     {% set convo = p_entry.conversation %}
                     <div class="chat-row-wrapper">
-                        <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-row {% if p_entry.is_pinned %}pinned{% endif %}">
-                            <div class="chat-avatar-container">
-                                {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
-                                {% if convo.is_group %}
-                                     <img src="{{ url_for('static', filename=convo.group_photo_path or 'img/default_group.png') }}" alt="{{ convo.name }}'s avatar" class="chat-avatar">
-                                {% elif other_participant %}
-                                    {% set other_user = other_participant.user %}
-                                    <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
-                                {% endif %}
-                            </div>
-                            <div class="chat-details">
-                                <div class="chat-row-top">
-                                    <span class="chat-name">
-                                        {% if p_entry.is_pinned %}<i class="fas fa-thumbtack pinned-icon"></i>{% endif %}
-                                        {% if convo.is_group %}
-                                            {{ convo.name }}
-                                        {% elif other_participant %}
-                                            {{ other_participant.user.full_name }}
-                                        {% endif %}
-                                    </span>
-                                    <span class="chat-timestamp">
-                                        {% if convo.messages.order_by(Message.created_at.desc()).first() %}
-                                            {{ convo.messages.order_by(Message.created_at.desc()).first().created_at | humanize_time }}
-                                        {% endif %}
-                                    </span>
-                                </div>
-                                <div class="chat-row-bottom">
-                                    <p class="chat-preview">
-                                        {% if convo.messages.order_by(Message.created_at.desc()).first() %}
-                                            {{ convo.messages.order_by(Message.created_at.desc()).first().body[:40] }}{% if convo.messages.order_by(Message.created_at.desc()).first().body|length > 40 %}...{% endif %}
-                                        {% else %}
-                                            No messages yet.
-                                        {% endif %}
-                                    </p>
-                                    {% set unread_count = convo.unread_messages_for(g.user) %}
-                                    {% if unread_count > 0 %}
-                                    <span class="unread-indicator"></span>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </a>
-                        <div class="chat-row-actions">
-                            <form action="{{ url_for('pin_chat', conversation_id=convo.id) }}" method="POST" style="display: inline;">
-                                <button type="submit" class="btn-chat-action">
+                        <div class="swipe-actions-container left">
+                            <form action="{{ url_for('pin_chat', conversation_id=convo.id) }}" method="POST" class="swipe-form">
+                                <button type="submit" class="swipe-action-button pin">
                                     <i class="fas fa-thumbtack"></i>
                                 </button>
                             </form>
-                            <form action="{{ url_for('archive_chat', conversation_id=convo.id) }}" method="POST" style="display: inline;">
-                                <button type="submit" class="btn-chat-action">
+                        </div>
+                        <div class="swipe-actions-container right">
+                             <form action="{{ url_for('archive_chat', conversation_id=convo.id) }}" method="POST" class="swipe-form">
+                                <button type="submit" class="swipe-action-button archive">
                                     <i class="fas fa-archive"></i>
                                 </button>
                             </form>
+                        </div>
+
+                        <div class="chat-row swipe-target {% if p_entry.is_pinned %}pinned{% endif %}">
+                            <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-row-link">
+                                <div class="chat-avatar-container">
+                                    {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
+                                    {% if convo.is_group %}
+                                         <img src="{{ url_for('static', filename=convo.group_photo_path or 'img/default_group.png') }}" alt="{{ convo.name }}'s avatar" class="chat-avatar">
+                                    {% elif other_participant %}
+                                        {% set other_user = other_participant.user %}
+                                        <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
+                                    {% endif %}
+                                </div>
+                                <div class="chat-details">
+                                    <div class="chat-row-top">
+                                        <span class="chat-name">
+                                            {% if p_entry.is_pinned %}<i class="fas fa-thumbtack pinned-icon"></i>{% endif %}
+                                            {% if convo.is_group %}
+                                                {{ convo.name }}
+                                            {% elif other_participant %}
+                                                {{ other_participant.user.full_name }}
+                                            {% endif %}
+                                        </span>
+                                        <span class="chat-timestamp">
+                                            {% if convo.messages.order_by(Message.created_at.desc()).first() %}
+                                                {{ convo.messages.order_by(Message.created_at.desc()).first().created_at | humanize_time }}
+                                            {% endif %}
+                                        </span>
+                                    </div>
+                                    <div class="chat-row-bottom">
+                                        <p class="chat-preview">
+                                            {% if convo.messages.order_by(Message.created_at.desc()).first() %}
+                                                {{ convo.messages.order_by(Message.created_at.desc()).first().body[:40] }}{% if convo.messages.order_by(Message.created_at.desc()).first().body|length > 40 %}...{% endif %}
+                                            {% else %}
+                                                No messages yet.
+                                            {% endif %}
+                                        </p>
+                                        {% set unread_count = convo.unread_messages_for(g.user) %}
+                                        {% if unread_count > 0 %}
+                                        <span class="unread-indicator"></span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </a>
                         </div>
                     </div>
                 {% endfor %}
@@ -209,7 +214,6 @@ document.addEventListener('DOMContentLoaded', function() {
         tab.addEventListener('click', () => {
             tabs.forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
-
             const targetTab = tab.getAttribute('data-tab');
             tabContents.forEach(content => {
                 content.classList.remove('active');
@@ -255,6 +259,64 @@ document.addEventListener('DOMContentLoaded', function() {
             fabOptions.classList.remove('open');
             fabMain.classList.remove('open');
         }
+    });
+
+    // --- Swipe Gesture Logic ---
+    const swipeTargets = document.querySelectorAll('.swipe-target');
+    swipeTargets.forEach(target => {
+        let startX = 0;
+        let currentX = 0;
+        let isSwiping = false;
+        const threshold = 80; // The width of the action container
+
+        target.addEventListener('pointerdown', (e) => {
+            // Don't swipe if the user is trying to scroll vertically
+            if (e.pointerType === 'touch' && e.target.closest('a')) {
+                 // Allow vertical scroll on links
+            } else {
+                 e.preventDefault();
+            }
+            startX = e.clientX;
+            isSwiping = true;
+            target.classList.add('swiping');
+            target.setPointerCapture(e.pointerId);
+        });
+
+        target.addEventListener('pointermove', (e) => {
+            if (!isSwiping) return;
+            currentX = e.clientX;
+            let diff = currentX - startX;
+
+            // Constrain the swipe
+            if (diff > threshold) diff = threshold;
+            if (diff < -threshold) diff = -threshold;
+
+            target.style.transform = `translateX(${diff}px)`;
+        });
+
+        const onPointerEnd = (e) => {
+            if (!isSwiping) return;
+            isSwiping = false;
+            target.classList.remove('swiping');
+            target.releasePointerCapture(e.pointerId);
+
+            const diff = currentX - startX;
+
+            if (diff > threshold / 2) { // Swiped right
+                const form = target.parentElement.querySelector('.swipe-actions-container.left .swipe-form');
+                if(form) form.submit();
+            } else if (diff < -threshold / 2) { // Swiped left
+                const form = target.parentElement.querySelector('.swipe-actions-container.right .swipe-form');
+                if(form) form.submit();
+            } else {
+                // Reset position
+                target.style.transform = 'translateX(0px)';
+            }
+        };
+
+        target.addEventListener('pointerup', onPointerEnd);
+        target.addEventListener('pointercancel', onPointerEnd);
+        target.addEventListener('lostpointercapture', onPointerEnd);
     });
 });
 </script>
