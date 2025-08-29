@@ -6,24 +6,9 @@
     <title>{% block title %}GLOOBA{% endblock %}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script>
-        // IIFE to set theme immediately, preventing FOUC (Flash of Unstyled Content)
-        (function() {
-            const theme = localStorage.getItem('theme');
-            if (theme === 'dark') {
-                document.body.dataset.theme = 'dark';
-            } else if (theme === 'light') {
-                document.body.dataset.theme = 'light';
-            } else { // 'system' or null
-                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                    document.body.dataset.theme = 'dark';
-                }
-            }
-        })();
-    </script>
 </head>
 <body>
-    {% if request.endpoint.startswith('chat_') or request.endpoint == 'message_thread' or request.endpoint == 'group_info' %}
+    {% if request.endpoint.startswith('chat_') or request.endpoint == 'message_thread' or request.endpoint == 'group_info' or request.endpoint == 'call_view' %}
         {% block chat_header %}{% endblock %}
     {% else %}
     <header class="top-bar">
@@ -67,7 +52,7 @@
     {% endif %}
     {% endif %}
 
-    <main class="main-content {% if request.endpoint == 'reels' or request.endpoint.startswith('chat_') or request.endpoint == 'message_thread' or request.endpoint == 'group_info' %}full-screen{% endif %}">
+    <main class="main-content {% if request.endpoint == 'reels' or request.endpoint.startswith('chat_') or request.endpoint == 'message_thread' or request.endpoint == 'group_info' or request.endpoint == 'call_view' %}full-screen{% endif %}">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 <div class="flash-messages">
@@ -125,82 +110,5 @@
         }
     </script>
     {% block scripts %}{% endblock %}
-    <script>
-        // This script should run on all pages to handle theme button clicks if they exist
-        document.addEventListener('DOMContentLoaded', function() {
-            const themeButtons = document.querySelectorAll('.theme-btn');
-
-            function applyTheme(theme) {
-                if (theme === 'dark') {
-                    document.body.dataset.theme = 'dark';
-                } else if (theme === 'light') {
-                    document.body.dataset.theme = 'light';
-                } else { // system
-                    document.body.removeAttribute('data-theme');
-                    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                        document.body.dataset.theme = 'dark';
-                    }
-                }
-            }
-
-            themeButtons.forEach(button => {
-                button.addEventListener('click', function() {
-                    const theme = this.dataset.theme;
-                    localStorage.setItem('theme', theme);
-                    applyTheme(theme);
-                });
-            });
-
-            // Listen for changes in system preference
-            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
-                const currentTheme = localStorage.getItem('theme');
-                if (currentTheme === 'system' || currentTheme === null) {
-                    applyTheme('system');
-                }
-            });
-        });
-
-        // --- Incoming Call Popup Logic ---
-        const socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
-        socket.on('offer', (data) => {
-            const callerInfo = data.caller_info;
-            const popup = document.getElementById('incoming-call-popup');
-            const callerNameEl = document.getElementById('caller-name');
-            const acceptBtn = document.getElementById('accept-call-btn');
-            const declineBtn = document.getElementById('decline-call-btn');
-
-            callerNameEl.textContent = `${callerInfo.name} is calling...`;
-
-            acceptBtn.onclick = () => {
-                window.location.href = `/call/${callerInfo.conversation_id}`;
-                popup.style.display = 'none';
-            };
-
-            declineBtn.onclick = () => {
-                socket.emit('decline-call', { to_sid: data.from_sid });
-                popup.style.display = 'none';
-            };
-
-            popup.style.display = 'flex';
-        });
-
-        socket.on('call-declined', (data) => {
-            // Logic to inform the original caller that the call was declined
-            alert("The user declined your call.");
-            // In a real app, you'd handle this more gracefully
-        });
-
-    </script>
-
-    <!-- Incoming Call Popup -->
-    <div id="incoming-call-popup" class="call-popup-container">
-        <div class="call-popup-content">
-            <h3 id="caller-name">Unknown Caller is calling...</h3>
-            <div class="call-popup-actions">
-                <button id="decline-call-btn" class="btn-call-action decline"><i class="fas fa-phone-slash"></i> Decline</button>
-                <button id="accept-call-btn" class="btn-call-action accept"><i class="fas fa-phone"></i> Accept</button>
-            </div>
-        </div>
-    </div>
 </body>
 </html>

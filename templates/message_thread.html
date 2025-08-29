@@ -1,97 +1,31 @@
 {% extends "base.html" %}
 
-{% block title %}
-    Chat with
-    {% if conversation.is_group %}
-        {{ conversation.name }}
-    {% elif other_user %}
-        {{ other_user.full_name }}
-    {% endif %}
-    - GLOOBA
-{% endblock %}
-
-{% block chat_header %}
-<header class="chat-header-bar">
-    <div class="chat-header-left">
-        <a href="{{ url_for('chat_inbox') }}" class="back-arrow">
-            <i class="fas fa-arrow-left"></i>
-        </a>
-        <div class="chat-header-profile">
-            {% if conversation.is_group %}
-                <img src="{{ url_for('static', filename=conversation.group_photo_path or 'img/default_group.png') }}" alt="{{ conversation.name }}'s avatar" class="chat-avatar-small">
-                <div class="chat-header-text">
-                    <span class="chat-header-name">{{ conversation.name }}</span>
-                    <span class="chat-header-status">{{ conversation.participants|length }} members</span>
-                </div>
-            {% elif other_user %}
-                <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar-small">
-                 <div class="chat-header-text">
-                    <span class="chat-header-name">{{ other_user.full_name }}</span>
-                    <span class="chat-header-status">Online</span> {# Placeholder status #}
-                </div>
-            {% endif %}
-        </div>
-    </div>
-    <div class="chat-header-right">
-        <a href="{{ url_for('call_view', conversation_id=conversation.id) }}" class="icon-button"><i class="fas fa-phone-alt"></i></a>
-        <a href="{{ url_for('call_view', conversation_id=conversation.id) }}" class="icon-button"><i class="fas fa-video"></i></a>
-        <a href="{{ url_for('group_info', conversation_id=conversation.id) if conversation.is_group else url_for('profile', username=other_user.username) }}" class="icon-button">
-            <i class="fas fa-info-circle"></i>
-        </a>
-    </div>
-</header>
-{% endblock %}
+{% block title %}Chat with {{ other_user.full_name if other_user else 'User' }} - GLOOBA{% endblock %}
 
 {% block content %}
-<div class="message-thread-area">
-    {% if conversation.pinned_message %}
-    <div class="pinned-message-bar">
-        <i class="fas fa-thumbtack"></i>
-        <div class="pinned-message-content">
-            <span class="pinned-sender">{{ conversation.pinned_message.sender.full_name }}</span>
-            <p class="pinned-text">{{ conversation.pinned_message.body }}</p>
-        </div>
-        <form action="{{ url_for('unpin_message', conversation_id=conversation.id) }}" method="POST">
-            <button type="submit" class="unpin-btn">&times;</button>
-        </form>
+<div class="message-thread-container">
+    <div class="thread-header">
+    {% if conversation.is_group %}
+        <a href="{{ url_for('group_info', conversation_id=conversation.id) }}" class="thread-header-user">
+            <img src="{{ url_for('static', filename=conversation.group_photo_path or 'img/default_group.png') }}" alt="{{ conversation.name }}'s photo" class="chat-avatar">
+            <span>{{ conversation.name }}</span>
+        </a>
+    {% elif other_user %}
+            <a href="{{ url_for('profile', username=other_user.username) }}" class="thread-header-user">
+                <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
+                <span>{{ other_user.full_name }}</span>
+            </a>
+        {% endif %}
     </div>
-    {% endif %}
-
-    <div class="message-list" id="message-list">
+    <div class="message-list">
         {% for message in messages %}
-            <div class="msg-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}">
-                {% if conversation.is_group and message.user_id != g.user.id %}
-                    <span class="sender-name">{{ message.sender.full_name }}</span>
-                {% endif %}
-                <div class="msg-bubble">
-                    {% if message.content_type == 'text' %}
-                        <p class="msg-text">{{ message.body | replace('@(\\w+)', '<strong>@\\1</strong>') | safe }}</p>
-                    {% elif message.content_type == 'image' %}
-                        <img src="{{ url_for('static', filename=message.file_path) }}" alt="User image" class="msg-image">
-                        {% if message.body %}<p class="msg-caption">{{ message.body }}</p>{% endif %}
-                    {% else %}
-                        <a href="{{ url_for('static', filename=message.file_path) }}" class="msg-file-link" target="_blank">
-                            <i class="fas fa-file-alt"></i>
-                            <span>{{ message.file_path.split('_')[-1] }}</span>
-                        </a>
-                        {% if message.body %}<p class="msg-caption">{{ message.body }}</p>{% endif %}
-                    {% endif %}
-                    <div class="msg-meta">
-                        <span class="msg-timestamp">{{ message.created_at.strftime('%H:%M') }}</span>
-                        {% if message.user_id == g.user.id %}
-                        <i class="fas fa-check-double msg-status-icon"></i>
-                        {% endif %}
-                    </div>
-                    {% if conversation.is_group %} {# Assuming only group admins can pin #}
-                    <form action="{{ url_for('pin_message', conversation_id=conversation.id, message_id=message.id) }}" method="POST" class="pin-form">
-                        <button type="submit" class="pin-btn"><i class="fas fa-thumbtack"></i></button>
-                    </form>
-                    {% endif %}
+            <div class="message-bubble-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}">
+                <div class="message-bubble">
+                    <p>{{ message.body }}</p>
                 </div>
             </div>
         {% endfor %}
     </div>
-
     {% set participant = conversation.participants|selectattr('user_id', 'equalto', g.user.id)|first %}
     {% if participant and participant.status == 'pending' %}
     <div class="request-actions-footer">
@@ -103,15 +37,11 @@
         </div>
     </div>
     {% else %}
-    <div class="message-input-container">
-        <div id="mention-suggestions" class="mention-suggestions-popup"></div>
-        <div class="message-input-bar">
-            <input type="file" id="file-input" style="display: none;" accept="image/*,application/pdf,application/msword,text/plain">
-            <button class="icon-button attachment-btn"><i class="fas fa-plus"></i></button>
-            <input type="text" id="message-input" class="message-input-field" placeholder="Type a message...">
-            <button class="icon-button mic-btn"><i class="fas fa-microphone"></i></button>
-            <button class="icon-button send-btn" style="display: none;"><i class="fas fa-paper-plane"></i></button>
-        </div>
+    <div class="message-composer">
+        <form>
+            <input type="text" name="body" placeholder="Type a message..." autocomplete="off" required>
+            <button type="submit"><i class="fas fa-paper-plane"></i></button>
+        </form>
     </div>
     {% endif %}
 </div>
@@ -123,277 +53,57 @@
     document.addEventListener('DOMContentLoaded', function() {
         var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
         var conversationId = "{{ conversation.id }}";
-        const isGroupChat = {{ conversation.is_group|tojson }};
-        const groupMembers = {{ group_members|tojson|safe }};
 
-        // --- DOM Elements ---
-        const messageList = document.getElementById('message-list');
-        const messageInput = document.getElementById('message-input');
-        const sendBtn = document.querySelector('.send-btn');
-        const micBtn = document.querySelector('.mic-btn');
-        const attachmentBtn = document.querySelector('.attachment-btn');
-        const fileInput = document.getElementById('file-input');
-        const mentionPopup = document.getElementById('mention-suggestions');
-
-        // --- Functions ---
-        function scrollToBottom() {
-            messageList.scrollTop = messageList.scrollHeight;
-        }
-
-        function renderMessage(msg) {
-            const currentUserId = {{ g.user.id }};
-            const isSent = msg.user_id === currentUserId;
-
-            const msgContainer = document.createElement('div');
-            msgContainer.className = `msg-container ${isSent ? 'sent' : 'received'}`;
-
-            let senderNameHtml = '';
-            if (isGroupChat && !isSent) {
-                senderNameHtml = `<span class="sender-name">${msg.author_name || 'User'}</span>`;
-            }
-
-            let messageContentHtml = '';
-            if (msg.content_type === 'text') {
-                const highlightedBody = msg.body.replace(/@(\w+)/g, '<strong>@$1</strong>');
-                messageContentHtml = `<p class="msg-text">${highlightedBody}</p>`;
-            } else if (msg.content_type === 'image') {
-                const imageUrl = `/static/${msg.file_path}`;
-                messageContentHtml = `<img src="${imageUrl}" alt="User image" class="msg-image">`;
-                if(msg.body) messageContentHtml += `<p class="msg-caption">${msg.body}</p>`;
-            } else {
-                const fileUrl = `/static/${msg.file_path}`;
-                const fileName = msg.file_path.split('_').slice(2).join('_');
-                messageContentHtml = `
-                    <a href="${fileUrl}" class="msg-file-link" target="_blank">
-                        <i class="fas fa-file-alt"></i>
-                        <span>${fileName}</span>
-                    </a>`;
-                if(msg.body) messageContentHtml += `<p class="msg-caption">${msg.body}</p>`;
-            }
-
-            const timestamp = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const statusIconHtml = isSent ? '<i class="fas fa-check-double msg-status-icon"></i>' : '';
-
-            msgContainer.innerHTML = `
-                ${senderNameHtml}
-                <div class="msg-bubble">
-                    ${messageContentHtml}
-                    <div class="msg-meta">
-                        <span class="msg-timestamp">${timestamp}</span>
-                        ${statusIconHtml}
-                    </div>
-                </div>
-            `;
-            messageList.appendChild(msgContainer);
-            scrollToBottom();
-        }
-
-        async function uploadFile(file) {
-            const formData = new FormData();
-            formData.append('file', file);
-
-            try {
-                const response = await fetch('/chat/upload_file', {
-                    method: 'POST',
-                    body: formData
-                });
-                const result = await response.json();
-                if (response.ok) {
-                    const contentType = file.type.startsWith('image/') ? 'image' : 'file';
-                    socket.emit('send_message', {
-                        room: conversationId,
-                        content_type: contentType,
-                        file_path: result.file_path,
-                        message: '' // Caption could be added here from an input
-                    });
-                } else {
-                    alert('File upload failed: ' + result.error);
-                }
-            } catch (error) {
-                console.error('Upload error:', error);
-                alert('An error occurred during upload.');
-            }
-        }
-
-        function showMentionSuggestions(query) {
-            mentionPopup.innerHTML = '';
-            const filteredMembers = groupMembers.filter(member =>
-                member.username.toLowerCase().startsWith(query.toLowerCase()) ||
-                member.full_name.toLowerCase().startsWith(query.toLowerCase())
-            );
-
-            if(filteredMembers.length === 0) {
-                mentionPopup.style.display = 'none';
-                return;
-            }
-
-            filteredMembers.forEach(member => {
-                const item = document.createElement('div');
-                item.className = 'mention-item';
-                item.textContent = `${member.full_name} (@${member.username})`;
-                item.onclick = () => insertMention(member.username);
-                mentionPopup.appendChild(item);
-            });
-            mentionPopup.style.display = 'block';
-        }
-
-        function insertMention(username) {
-            const currentText = messageInput.value;
-            const atIndex = currentText.lastIndexOf('@');
-            const newText = currentText.substring(0, atIndex) + `@${username} `;
-            messageInput.value = newText;
-            mentionPopup.style.display = 'none';
-            messageInput.focus();
-        }
-
-        // --- Socket.IO Event Handlers ---
+        // Join the conversation room
         socket.on('connect', function() {
             socket.emit('join', {room: conversationId});
         });
 
+        // Listen for new messages
         socket.on('new_message', function(msg) {
-            renderMessage(msg);
+            const messageList = document.querySelector('.message-list');
+            const currentUserId = {{ g.user.id }};
+
+            // Don't append the message if we sent it (it's already handled by the form submission logic)
+            // No, the form submission logic now just emits, it doesn't add to the DOM.
+            // So we need to render the message for everyone, including the sender.
+
+            // Create new message bubble
+            const bubbleContainer = document.createElement('div');
+            bubbleContainer.classList.add('message-bubble-container');
+            if (msg.user_id === currentUserId) {
+                bubbleContainer.classList.add('sent');
+            } else {
+                bubbleContainer.classList.add('received');
+            }
+
+            const bubble = document.createElement('div');
+            bubble.classList.add('message-bubble');
+            const p = document.createElement('p');
+            p.textContent = msg.body;
+            bubble.appendChild(p);
+            bubbleContainer.appendChild(bubble);
+
+            messageList.appendChild(bubbleContainer);
+            // Scroll to the bottom
+            messageList.scrollTop = messageList.scrollHeight;
         });
 
-        // --- DOM Event Listeners ---
-        function sendMessage() {
+        // Handle form submission
+        const form = document.querySelector('.message-composer form');
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            let messageInput = document.querySelector('input[name="body"]');
             let message = messageInput.value;
             if (message.trim() !== '') {
-                socket.emit('send_message', {room: conversationId, message: message, content_type: 'text'});
-                messageInput.value = '';
-                mentionPopup.style.display = 'none';
-                messageInput.dispatchEvent(new Event('input'));
-            }
-        }
-
-        sendBtn.addEventListener('click', sendMessage);
-        messageInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
+                socket.emit('send_message', {room: conversationId, message: message});
+                messageInput.value = ''; // Clear input field
             }
         });
 
-        messageInput.addEventListener('input', function() {
-            if (messageInput.value.trim().length > 0) {
-                micBtn.style.display = 'none';
-                sendBtn.style.display = 'block';
-            } else {
-                micBtn.style.display = 'block';
-                sendBtn.style.display = 'none';
-            }
-
-            const text = messageInput.value;
-            const atIndex = text.lastIndexOf('@');
-            const spaceIndex = text.lastIndexOf(' ');
-
-            if (isGroupChat && atIndex > spaceIndex) {
-                const query = text.substring(atIndex + 1);
-                showMentionSuggestions(query);
-            } else {
-                mentionPopup.style.display = 'none';
-            }
-        });
-
-        attachmentBtn.addEventListener('click', () => {
-            fileInput.click();
-        });
-
-        fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                uploadFile(file);
-            }
-        });
-
-        // --- Initial State ---
-        scrollToBottom();
+        // Scroll to the bottom of the message list on page load
+        const messageList = document.querySelector('.message-list');
+        messageList.scrollTop = messageList.scrollHeight;
     });
 </script>
-<style>
-    .pinned-message-bar {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 15px;
-        background-color: #f0f2f5;
-        border-bottom: 1px solid #e0e0e0;
-        flex-shrink: 0;
-    }
-    .pinned-message-bar i { color: #657786; }
-    .pinned-message-content { flex-grow: 1; }
-    .pinned-sender { font-weight: bold; font-size: 14px; }
-    .pinned-text { margin: 0; font-size: 14px; color: #333; }
-    .unpin-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: #657786; }
-
-    .msg-bubble { position: relative; }
-    .pin-form {
-        position: absolute;
-        top: -10px;
-        right: -10px;
-        display: none;
-    }
-    .msg-bubble:hover .pin-form {
-        display: block;
-    }
-    .pin-btn {
-        background: #e4e6eb;
-        border: none;
-        border-radius: 50%;
-        width: 24px;
-        height: 24px;
-        font-size: 12px;
-        cursor: pointer;
-    }
-    .message-input-container {
-        position: relative;
-    }
-    .mention-suggestions-popup {
-        display: none;
-        position: absolute;
-        bottom: 100%;
-        left: 0;
-        right: 0;
-        background: white;
-        border: 1px solid #dbdbdb;
-        border-radius: 8px;
-        box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-        max-height: 200px;
-        overflow-y: auto;
-        margin-bottom: 5px;
-    }
-    .mention-item {
-        padding: 10px 15px;
-        cursor: pointer;
-    }
-    .mention-item:hover {
-        background-color: #f0f2f5;
-    }
-    .msg-image {
-        max-width: 100%;
-        border-radius: 15px;
-        display: block;
-    }
-    .msg-caption {
-        padding-top: 8px;
-        font-size: 14px;
-        color: #ddd;
-    }
-    .msg-bubble .msg-caption {
-        color: #333;
-    }
-    .msg-file-link {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px;
-        background-color: rgba(0,0,0,0.1);
-        border-radius: 10px;
-        text-decoration: none;
-        color: inherit;
-    }
-    .msg-file-link i {
-        font-size: 24px;
-    }
-</style>
 {% endblock %}
