@@ -1349,6 +1349,22 @@ def join_room(room_id):
     flash('You have joined the room!', 'success')
     return redirect(url_for('view_room', room_id=room.id))
 
+@app.route('/call/<int:conversation_id>')
+@login_required
+def call_view(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    # Ensure user is a participant
+    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+    if not participant:
+        return "You are not a member of this conversation.", 403
+
+    # Get the other user in a 1-on-1 chat
+    other_user = None
+    if not convo.is_group:
+        other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
+
+    return render_template('call_view.html', conversation=convo, other_user=other_user)
+
 
 # --- SOCKETIO EVENTS ---
 @socketio.on('send_message')
@@ -1432,6 +1448,30 @@ def on_join(data):
 def on_leave(data):
     room = data['room']
     leave_room(room)
+
+# --- WebRTC Signaling Events ---
+@socketio.on('call-user')
+def handle_call_user(data):
+    # Relay the call offer to the other user in the room
+    emit('call-made', {
+        'offer': data['offer'],
+        'sid': request.sid
+    }, room=data['to'])
+
+@socketio.on('make-answer')
+def handle_make_answer(data):
+    # Relay the answer back to the original caller
+    emit('answer-made', {
+        'answer': data['answer']
+    }, room=data['to'])
+
+@socketio.on('ice-candidate')
+def handle_ice_candidate(data):
+    # Relay ICE candidates to the other peer
+    emit('ice-candidate', {
+        'candidate': data['candidate']
+    }, room=data['to'])
+
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)
