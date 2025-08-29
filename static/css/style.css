@@ -157,3 +157,63 @@ body[data-theme="dark"] .btn-profile-action:hover {
 body[data-theme="dark"] .msg-file-link {
     background-color: rgba(255,255,255,0.1);
 }
+
+/* --- Incoming Call Popup --- */
+.call-popup-container {
+    display: none; /* Hidden by default */
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+    background-color: var(--primary-background);
+    border-radius: 12px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    width: 320px;
+    padding: 20px;
+    animation: slideIn 0.5s forwards;
+}
+
+.call-popup-content h3 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+    text-align: center;
+}
+
+.call-popup-actions {
+    display: flex;
+    justify-content: space-around;
+    gap: 15px;
+}
+
+.btn-call-action {
+    flex-grow: 1;
+    padding: 10px;
+    border-radius: 8px;
+    border: none;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.btn-call-action.decline {
+    background-color: #ea4335;
+    color: white;
+}
+.btn-call-action.accept {
+    background-color: #34a853;
+    color: white;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}

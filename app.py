@@ -1575,23 +1575,25 @@ def handle_join_call_room(data):
     sid = request.sid
     join_room(room)
 
-    # Get existing users in the room
     existing_sids = call_rooms.get(room, [])
-
-    # Send existing users to the new user
     emit('existing-peers', existing_sids, room=sid)
 
-    # Add new user to the room's user list
     if room not in call_rooms:
         call_rooms[room] = []
     call_rooms[room].append(sid)
 
-    # Announce the new user to all other users
     emit('new-peer', {'sid': sid}, broadcast=True, include_self=False, room=room)
 
 @socketio.on('offer')
 def handle_offer(data):
-    emit('offer', {'offer': data['offer'], 'from_sid': request.sid}, room=data['to_sid'])
+    # Include caller info for the popup
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id) if user_id else None
+    caller_info = {
+        'name': user.full_name if user else 'Unknown Caller',
+        'conversation_id': data['room']
+    }
+    emit('offer', {'offer': data['offer'], 'from_sid': request.sid, 'caller_info': caller_info}, room=data['to_sid'])
 
 @socketio.on('answer')
 def handle_answer(data):
@@ -1600,6 +1602,14 @@ def handle_answer(data):
 @socketio.on('ice-candidate')
 def handle_ice_candidate(data):
     emit('ice-candidate', {'candidate': data['candidate'], 'from_sid': request.sid}, room=data['to_sid'])
+
+@socketio.on('decline-call')
+def handle_decline_call(data):
+    emit('call-declined', {'sid': request.sid}, room=data['to_sid'])
+
+@socketio.on('call-reaction')
+def handle_call_reaction(data):
+    emit('call-reaction', {'reaction': data['reaction'], 'from_sid': request.sid}, room=data['room'], include_self=False)
 
 @socketio.on('disconnect')
 def handle_disconnect():

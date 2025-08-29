@@ -159,6 +159,48 @@
                 }
             });
         });
+
+        // --- Incoming Call Popup Logic ---
+        const socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+        socket.on('offer', (data) => {
+            const callerInfo = data.caller_info;
+            const popup = document.getElementById('incoming-call-popup');
+            const callerNameEl = document.getElementById('caller-name');
+            const acceptBtn = document.getElementById('accept-call-btn');
+            const declineBtn = document.getElementById('decline-call-btn');
+
+            callerNameEl.textContent = `${callerInfo.name} is calling...`;
+
+            acceptBtn.onclick = () => {
+                window.location.href = `/call/${callerInfo.conversation_id}`;
+                popup.style.display = 'none';
+            };
+
+            declineBtn.onclick = () => {
+                socket.emit('decline-call', { to_sid: data.from_sid });
+                popup.style.display = 'none';
+            };
+
+            popup.style.display = 'flex';
+        });
+
+        socket.on('call-declined', (data) => {
+            // Logic to inform the original caller that the call was declined
+            alert("The user declined your call.");
+            // In a real app, you'd handle this more gracefully
+        });
+
     </script>
+
+    <!-- Incoming Call Popup -->
+    <div id="incoming-call-popup" class="call-popup-container">
+        <div class="call-popup-content">
+            <h3 id="caller-name">Unknown Caller is calling...</h3>
+            <div class="call-popup-actions">
+                <button id="decline-call-btn" class="btn-call-action decline"><i class="fas fa-phone-slash"></i> Decline</button>
+                <button id="accept-call-btn" class="btn-call-action accept"><i class="fas fa-phone"></i> Accept</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

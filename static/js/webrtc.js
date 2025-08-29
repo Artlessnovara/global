@@ -32,20 +32,15 @@ async function init(convoId) {
 
 function setupSocketListeners() {
     socket.on('existing-peers', (sids) => {
-        console.log('Existing peers:', sids);
-        sids.forEach(sid => {
-            createPeerConnection(sid, true);
-        });
+        sids.forEach(sid => createPeerConnection(sid, true));
     });
 
     socket.on('new-peer', (data) => {
-        console.log('New peer joined:', data.sid);
         createPeerConnection(data.sid, false);
     });
 
     socket.on('offer', async (data) => {
-        console.log('Offer received from:', data.from_sid);
-        const pc = getPeerConnection(data.from_sid, false); // Important: initiator is false here
+        const pc = getPeerConnection(data.from_sid, false);
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -53,7 +48,6 @@ function setupSocketListeners() {
     });
 
     socket.on('answer', async (data) => {
-        console.log('Answer received from:', data.from_sid);
         await getPeerConnection(data.from_sid).setRemoteDescription(new RTCSessionDescription(data.answer));
     });
 
@@ -62,82 +56,79 @@ function setupSocketListeners() {
     });
 
     socket.on('peer-left', (data) => {
-        console.log('Peer left:', data.sid);
         if (peerConnections.has(data.sid)) {
             peerConnections.get(data.sid).close();
             peerConnections.delete(data.sid);
         }
         const videoContainer = document.getElementById(`container-${data.sid}`);
-        if (videoContainer) {
-            videoContainer.remove();
-        }
+        if (videoContainer) videoContainer.remove();
+    });
+
+    socket.on('call-reaction', (data) => {
+        showFloatingReaction(data.reaction);
     });
 }
 
 function createPeerConnection(sid, isInitiator) {
     if (peerConnections.has(sid)) return peerConnections.get(sid);
-
     const pc = new RTCPeerConnection(servers);
     peerConnections.set(sid, pc);
 
-    localStream.getTracks().forEach(track => {
-        pc.addTrack(track, localStream);
-    });
-
-    pc.ontrack = (event) => {
-        addRemoteVideoStream(sid, event.streams[0]);
-    };
-
+    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    pc.ontrack = (event) => addRemoteVideoStream(sid, event.streams[0]);
     pc.onicecandidate = (event) => {
-        if (event.candidate) {
-            socket.emit('ice-candidate', { to_sid: sid, candidate: event.candidate });
-        }
+        if (event.candidate) socket.emit('ice-candidate', { to_sid: sid, candidate: event.candidate });
     };
 
     if (isInitiator) {
         pc.createOffer()
             .then(offer => pc.setLocalDescription(offer))
-            .then(() => {
-                socket.emit('offer', { to_sid: sid, offer: pc.localDescription });
-            });
+            .then(() => socket.emit('offer', { to_sid: sid, offer: pc.localDescription, room: conversationId }));
     }
     return pc;
 }
 
 function getPeerConnection(sid, isInitiator = false) {
-    if (!peerConnections.has(sid)) {
-        return createPeerConnection(sid, isInitiator);
-    }
-    return peerConnections.get(sid);
+    return peerConnections.has(sid) ? peerConnections.get(sid) : createPeerConnection(sid, isInitiator);
 }
 
 function addRemoteVideoStream(sid, stream) {
     const videoGrid = document.getElementById('video-grid');
-    let videoContainer = document.getElementById(`container-${sid}`);
-    if (!videoContainer) {
-        videoContainer = document.createElement('div');
-        videoContainer.classList.add('video-container');
-        videoContainer.id = `container-${sid}`;
+    if (!document.getElementById(`container-${sid}`)) {
+        const container = document.createElement('div');
+        container.className = 'video-container';
+        container.id = `container-${sid}`;
 
-        const videoElement = document.createElement('video');
-        videoElement.autoplay = true;
-        videoElement.playsInline = true;
+        const video = document.createElement('video');
+        video.autoplay = true;
+        video.playsInline = true;
+        video.srcObject = stream;
 
         const label = document.createElement('span');
-        label.classList.add('video-label');
+        label.className = 'video-label';
         label.textContent = `User ${sid.substring(0, 4)}`;
 
-        videoContainer.appendChild(videoElement);
-        videoContainer.appendChild(label);
-        videoGrid.appendChild(videoContainer);
-        videoElement.srcObject = stream;
+        container.append(video, label);
+        videoGrid.appendChild(container);
     }
+}
+
+function showFloatingReaction(emoji) {
+    const container = document.getElementById('reactions-container');
+    const reaction = document.createElement('div');
+    reaction.className = 'floating-reaction';
+    reaction.textContent = emoji;
+    reaction.style.left = `${Math.random() * 80 + 10}%`; // Random horizontal position
+    container.appendChild(reaction);
+
+    setTimeout(() => reaction.remove(), 4000); // Remove after animation
 }
 
 function addControlListeners() {
     const micBtn = document.getElementById('mic-btn');
     const cameraBtn = document.getElementById('camera-btn');
     const hangupBtn = document.getElementById('hangup-btn');
+    const reactBtn = document.getElementById('react-btn');
 
     micBtn.addEventListener('click', () => {
         const audioTrack = localStream.getTracks().find(track => track.kind === 'audio');
@@ -151,10 +142,14 @@ function addControlListeners() {
         cameraBtn.innerHTML = videoTrack.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
     });
 
+    reactBtn.addEventListener('click', () => {
+        const emoji = '❤️';
+        showFloatingReaction(emoji); // Show locally immediately
+        socket.emit('call-reaction', { room: conversationId, reaction: emoji });
+    });
+
     hangupBtn.addEventListener('click', () => {
-        for (const pc of peerConnections.values()) {
-            pc.close();
-        }
+        for (const pc of peerConnections.values()) pc.close();
         peerConnections.clear();
         if(socket) socket.disconnect();
         window.location.href = `/chat/${conversationId}`;

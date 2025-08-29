@@ -11,9 +11,11 @@
         </div>
         <!-- Remote videos will be added here dynamically -->
     </div>
+    <div id="reactions-container" class="reactions-container"></div>
     <div class="call-controls">
         <button id="mic-btn" class="control-btn"><i class="fas fa-microphone"></i></button>
         <button id="camera-btn" class="control-btn"><i class="fas fa-video"></i></button>
+        <button id="react-btn" class="control-btn"><i class="fas fa-heart"></i></button>
         <button id="hangup-btn" class="control-btn hangup"><i class="fas fa-phone-slash"></i></button>
     </div>
 </div>
@@ -52,7 +54,6 @@
         display: grid;
         gap: 10px;
         padding: 10px;
-        /* Start with a 1x1 grid, will be adjusted by JS */
         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     }
     .video-container {
@@ -98,6 +99,32 @@
     }
     .control-btn.hangup {
         background-color: #ea4335;
+    }
+    .reactions-container {
+        position: absolute;
+        bottom: 120px;
+        right: 20px;
+        width: 100px;
+        height: 300px;
+        pointer-events: none;
+    }
+    .floating-reaction {
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        font-size: 40px;
+        animation: floatUp 4s ease-out forwards;
+        opacity: 1;
+    }
+    @keyframes floatUp {
+        from {
+            transform: translateY(0) translateX(-50%);
+            opacity: 1;
+        }
+        to {
+            transform: translateY(-300px) translateX(-50%);
+            opacity: 0;
+        }
     }
 </style>
 {% endblock %}
