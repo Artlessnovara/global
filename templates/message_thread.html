@@ -1,31 +1,68 @@
 {% extends "base.html" %}
 
-{% block title %}Chat with {{ other_user.full_name if other_user else 'User' }} - GLOOBA{% endblock %}
+{% block title %}
+    Chat with
+    {% if conversation.is_group %}
+        {{ conversation.name }}
+    {% elif other_user %}
+        {{ other_user.full_name }}
+    {% endif %}
+    - GLOOBA
+{% endblock %}
+
+{% block chat_header %}
+<header class="chat-header-bar">
+    <div class="chat-header-left">
+        <a href="{{ url_for('chat_inbox') }}" class="back-arrow">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <div class="chat-header-profile">
+            {% if conversation.is_group %}
+                <img src="{{ url_for('static', filename=conversation.group_photo_path or 'img/default_group.png') }}" alt="{{ conversation.name }}'s avatar" class="chat-avatar-small">
+                <div class="chat-header-text">
+                    <span class="chat-header-name">{{ conversation.name }}</span>
+                    <span class="chat-header-status">{{ conversation.participants|length }} members</span>
+                </div>
+            {% elif other_user %}
+                <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar-small">
+                 <div class="chat-header-text">
+                    <span class="chat-header-name">{{ other_user.full_name }}</span>
+                    <span class="chat-header-status">Online</span> {# Placeholder status #}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="chat-header-right">
+        <button class="icon-button"><i class="fas fa-phone-alt"></i></button>
+        <button class="icon-button"><i class="fas fa-video"></i></button>
+        <a href="{{ url_for('group_info', conversation_id=conversation.id) if conversation.is_group else url_for('profile', username=other_user.username) }}" class="icon-button">
+            <i class="fas fa-info-circle"></i>
+        </a>
+    </div>
+</header>
+{% endblock %}
 
 {% block content %}
-<div class="message-thread-container">
-    <div class="thread-header">
-    {% if conversation.is_group %}
-        <a href="{{ url_for('group_info', conversation_id=conversation.id) }}" class="thread-header-user">
-            <img src="{{ url_for('static', filename=conversation.group_photo_path or 'img/default_group.png') }}" alt="{{ conversation.name }}'s photo" class="chat-avatar">
-            <span>{{ conversation.name }}</span>
-        </a>
-    {% elif other_user %}
-            <a href="{{ url_for('profile', username=other_user.username) }}" class="thread-header-user">
-                <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
-                <span>{{ other_user.full_name }}</span>
-            </a>
-        {% endif %}
-    </div>
-    <div class="message-list">
+<div class="message-thread-area">
+    <div class="message-list" id="message-list">
         {% for message in messages %}
-            <div class="message-bubble-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}">
-                <div class="message-bubble">
-                    <p>{{ message.body }}</p>
+            <div class="msg-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}">
+                {% if conversation.is_group and message.user_id != g.user.id %}
+                    <span class="sender-name">{{ message.sender.full_name }}</span>
+                {% endif %}
+                <div class="msg-bubble">
+                    <p class="msg-text">{{ message.body }}</p>
+                    <div class="msg-meta">
+                        <span class="msg-timestamp">{{ message.created_at.strftime('%H:%M') }}</span>
+                        {% if message.user_id == g.user.id %}
+                        <i class="fas fa-check-double msg-status-icon"></i> {# Placeholder #}
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         {% endfor %}
     </div>
+
     {% set participant = conversation.participants|selectattr('user_id', 'equalto', g.user.id)|first %}
     {% if participant and participant.status == 'pending' %}
     <div class="request-actions-footer">
@@ -37,11 +74,11 @@
         </div>
     </div>
     {% else %}
-    <div class="message-composer">
-        <form>
-            <input type="text" name="body" placeholder="Type a message..." autocomplete="off" required>
-            <button type="submit"><i class="fas fa-paper-plane"></i></button>
-        </form>
+    <div class="message-input-bar">
+        <button class="icon-button attachment-btn"><i class="fas fa-plus"></i></button>
+        <input type="text" id="message-input" class="message-input-field" placeholder="Type a message...">
+        <button class="icon-button mic-btn"><i class="fas fa-microphone"></i></button>
+        <button class="icon-button send-btn" style="display: none;"><i class="fas fa-paper-plane"></i></button>
     </div>
     {% endif %}
 </div>
@@ -54,56 +91,103 @@
         var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
         var conversationId = "{{ conversation.id }}";
 
-        // Join the conversation room
+        // --- DOM Elements ---
+        const messageList = document.getElementById('message-list');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.querySelector('.send-btn');
+        const micBtn = document.querySelector('.mic-btn');
+
+        // --- Functions ---
+        function scrollToBottom() {
+            messageList.scrollTop = messageList.scrollHeight;
+        }
+
+        function renderMessage(msg) {
+            const currentUserId = {{ g.user.id }};
+            const isSent = msg.user_id === currentUserId;
+
+            const msgContainer = document.createElement('div');
+            msgContainer.classList.add('msg-container', isSent ? 'sent' : 'received');
+
+            // Add sender name for group chats
+            {% if conversation.is_group %}
+            if (!isSent) {
+                const senderName = document.createElement('span');
+                senderName.classList.add('sender-name');
+                // The backend now sends author_name for this purpose
+                senderName.textContent = msg.author_name || 'User';
+                msgContainer.appendChild(senderName);
+            }
+            {% endif %}
+
+            const msgBubble = document.createElement('div');
+            msgBubble.classList.add('msg-bubble');
+
+            const p = document.createElement('p');
+            p.classList.add('msg-text');
+            p.textContent = msg.body;
+            msgBubble.appendChild(p);
+
+            const meta = document.createElement('div');
+            meta.classList.add('msg-meta');
+
+            const timestamp = document.createElement('span');
+            timestamp.classList.add('msg-timestamp');
+            timestamp.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); // Simple time
+            meta.appendChild(timestamp);
+
+            if (isSent) {
+                const statusIcon = document.createElement('i');
+                statusIcon.classList.add('fas', 'fa-check-double', 'msg-status-icon');
+                meta.appendChild(statusIcon);
+            }
+
+            msgBubble.appendChild(meta);
+            msgContainer.appendChild(msgBubble);
+            messageList.appendChild(msgContainer);
+            scrollToBottom();
+        }
+
+        // --- Socket.IO Event Handlers ---
         socket.on('connect', function() {
             socket.emit('join', {room: conversationId});
         });
 
-        // Listen for new messages
         socket.on('new_message', function(msg) {
-            const messageList = document.querySelector('.message-list');
-            const currentUserId = {{ g.user.id }};
-
-            // Don't append the message if we sent it (it's already handled by the form submission logic)
-            // No, the form submission logic now just emits, it doesn't add to the DOM.
-            // So we need to render the message for everyone, including the sender.
-
-            // Create new message bubble
-            const bubbleContainer = document.createElement('div');
-            bubbleContainer.classList.add('message-bubble-container');
-            if (msg.user_id === currentUserId) {
-                bubbleContainer.classList.add('sent');
-            } else {
-                bubbleContainer.classList.add('received');
-            }
-
-            const bubble = document.createElement('div');
-            bubble.classList.add('message-bubble');
-            const p = document.createElement('p');
-            p.textContent = msg.body;
-            bubble.appendChild(p);
-            bubbleContainer.appendChild(bubble);
-
-            messageList.appendChild(bubbleContainer);
-            // Scroll to the bottom
-            messageList.scrollTop = messageList.scrollHeight;
+            // Render message received from server
+            renderMessage(msg);
         });
 
-        // Handle form submission
-        const form = document.querySelector('.message-composer form');
-        form.addEventListener('submit', function(e) {
-            e.preventDefault();
-            let messageInput = document.querySelector('input[name="body"]');
+        // --- DOM Event Listeners ---
+        function sendMessage() {
             let message = messageInput.value;
             if (message.trim() !== '') {
                 socket.emit('send_message', {room: conversationId, message: message});
-                messageInput.value = ''; // Clear input field
+                messageInput.value = '';
+                messageInput.dispatchEvent(new Event('input')); // Trigger input event to toggle buttons
+            }
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendMessage();
             }
         });
 
-        // Scroll to the bottom of the message list on page load
-        const messageList = document.querySelector('.message-list');
-        messageList.scrollTop = messageList.scrollHeight;
+        messageInput.addEventListener('input', function() {
+            if (messageInput.value.trim().length > 0) {
+                micBtn.style.display = 'none';
+                sendBtn.style.display = 'block';
+            } else {
+                micBtn.style.display = 'block';
+                sendBtn.style.display = 'none';
+            }
+        });
+
+        // --- Initial State ---
+        scrollToBottom();
     });
 </script>
 {% endblock %}

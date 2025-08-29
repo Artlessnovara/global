@@ -1,8 +1,8 @@
 import os
 from datetime import datetime, timedelta, date, timezone
-from flask import Flask, render_template, request, redirect, url_for, session, flash, g
+from flask import Flask, render_template, request, redirect, url_for, session, flash, g, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, aliased
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import click
@@ -168,8 +168,10 @@ class Participant(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
     last_read_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    status = db.Column(db.String(20), default='active', nullable=False)
+    status = db.Column(db.String(20), default='active', nullable=False) # active, pending, blocked
     role = db.Column(db.String(20), nullable=False, default='member') # 'admin' or 'member'
+    is_pinned = db.Column(db.Boolean, default=False, nullable=False)
+    is_archived = db.Column(db.Boolean, default=False, nullable=False)
     user = db.relationship('User', back_populates='conversations')
     conversation = db.relationship('Conversation', back_populates='participants')
 
@@ -202,6 +204,16 @@ class Message(db.Model):
     body = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     sender = db.relationship('User')
+
+class MessageReaction(db.Model):
+    __tablename__ = 'message_reactions'
+    id = db.Column(db.Integer, primary_key=True)
+    message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    reaction = db.Column(db.String(10), nullable=False) # e.g., '❤️', '😂'
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    user = db.relationship('User')
+    message = db.relationship('Message', backref=db.backref('reactions', lazy='dynamic', cascade="all, delete-orphan"))
 
 class Notification(db.Model):
     __tablename__ = 'notifications'
@@ -670,6 +682,130 @@ def delete_chat(conversation_id):
     flash('Conversation deleted.', 'success')
     return redirect(url_for('chat_inbox'))
 
+@app.route('/chat/pin/<int:conversation_id>', methods=['POST'])
+@login_required
+def pin_chat(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+    if participant:
+        participant.is_pinned = not participant.is_pinned
+        db.session.commit()
+        flash('Chat pin status updated.', 'success')
+    return redirect(url_for('chat_inbox'))
+
+@app.route('/chat/archive/<int:conversation_id>', methods=['POST'])
+@login_required
+def archive_chat(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+    if participant:
+        participant.is_archived = not participant.is_archived
+        db.session.commit()
+        flash('Chat archive status updated.', 'success')
+    return redirect(url_for('chat_inbox'))
+
+@app.route('/chat/search')
+@login_required
+def chat_search():
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify([])
+
+    # --- Search Users ---
+    # Find users you are not already in a 1-on-1 chat with
+    # Get IDs of users the current user already has a 1-on-1 chat with
+    user_convos = db.session.query(Conversation.id).join(Participant).filter(
+        Participant.user_id == g.user.id,
+        Conversation.is_group == False
+    ).all()
+    user_convo_ids = [uc[0] for uc in user_convos]
+
+    other_participants = db.session.query(Participant.user_id).filter(
+        Participant.conversation_id.in_(user_convo_ids),
+        Participant.user_id != g.user.id
+    ).all()
+    existing_chat_user_ids = [op[0] for op in other_participants]
+
+    users = User.query.filter(
+        ((User.username.ilike(f'%{query}%')) | (User.full_name.ilike(f'%{query}%'))),
+        User.id != g.user.id,
+        ~User.id.in_(existing_chat_user_ids)
+    ).limit(5).all()
+
+    # --- Search Conversations (Groups and 1-on-1) ---
+    # Find conversations the user is part of that match the query
+    P1 = aliased(Participant)
+    P2 = aliased(Participant)
+    U2 = aliased(User)
+
+    user_conversations_query = db.session.query(Conversation).join(
+        P1, P1.conversation_id == Conversation.id
+    ).filter(P1.user_id == g.user.id)
+
+    # Filter for group chats by name
+    group_chats = user_conversations_query.filter(
+        Conversation.is_group == True,
+        Conversation.name.ilike(f'%{query}%')
+    )
+
+    # Filter for 1-on-1 chats by other user's name
+    one_on_one_chats = user_conversations_query.join(
+        P2, P2.conversation_id == Conversation.id
+    ).join(
+        U2, U2.id == P2.user_id
+    ).filter(
+        Conversation.is_group == False,
+        P2.user_id != g.user.id,
+        (U2.full_name.ilike(f'%{query}%') | U2.username.ilike(f'%{query}%'))
+    )
+
+    # --- Search Messages ---
+    # Find conversations with messages that match the query
+    message_chats = user_conversations_query.join(
+        Message, Message.conversation_id == Conversation.id
+    ).filter(Message.body.ilike(f'%{query}%'))
+
+    # Combine conversation results and remove duplicates
+    all_convos = group_chats.union(one_on_one_chats, message_chats).limit(10).all()
+
+    # --- Format Results ---
+    results = []
+    # Add users (potential new chats)
+    for user in users:
+        results.append({
+            'type': 'user',
+            'id': user.id,
+            'name': user.full_name,
+            'sub_text': f'@{user.username}',
+            'avatar': f'https://i.pravatar.cc/150?u={user.username}',
+            'url': url_for('start_chat', user_id=user.id)
+        })
+
+    # Add conversations
+    for convo in all_convos:
+        if convo.is_group:
+            name = convo.name
+            sub_text = f'{len(convo.participants)} members'
+            avatar = url_for('static', filename=convo.group_photo_path or 'img/default_group.png')
+        else:
+            other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
+            if not other_user: continue
+            name = other_user.full_name
+            sub_text = f'Chat with {other_user.username}'
+            avatar = f'https://i.pravatar.cc/150?u={other_user.username}'
+
+        results.append({
+            'type': 'conversation',
+            'id': convo.id,
+            'name': name,
+            'sub_text': sub_text,
+            'avatar': avatar,
+            'url': url_for('message_thread', conversation_id=convo.id)
+        })
+
+    return jsonify(results)
+
+
 @app.route('/chat/group/<int:conversation_id>/update', methods=['POST'])
 @login_required
 def update_group_info(conversation_id):
@@ -798,6 +934,118 @@ def update_role(conversation_id, user_id):
 
     return redirect(url_for('group_info', conversation_id=conversation.id))
 
+@app.route('/chat/create_group')
+@login_required
+def create_group():
+    session.pop('group_creation_form', None)
+    session['group_creation_form'] = {'members': [g.user.id]} # Creator is always a member
+    return redirect(url_for('create_group_step', step=1))
+
+@app.route('/chat/create_group/step/<int:step>', methods=['GET', 'POST'])
+@login_required
+def create_group_step(step):
+    if 'group_creation_form' not in session:
+        return redirect(url_for('create_group'))
+
+    if request.method == 'POST':
+        # --- Step 1: Name & Description ---
+        if step == 1:
+            name = request.form.get('name')
+            if not name:
+                flash('Group name is required.', 'error')
+                return redirect(url_for('create_group_step', step=1))
+            session['group_creation_form']['name'] = name
+            session['group_creation_form']['description'] = request.form.get('description', '')
+            session.modified = True
+            return redirect(url_for('create_group_step', step=2))
+
+        # --- Step 2: Photo ---
+        elif step == 2:
+            # Photo upload logic is optional and can be complex.
+            # We will skip the backend processing for now but keep the step in the flow.
+            return redirect(url_for('create_group_step', step=3))
+
+        # --- Step 3: Add Members ---
+        elif step == 3:
+            member_ids = request.form.getlist('members')
+            # Ensure creator is always included
+            if str(g.user.id) not in member_ids:
+                member_ids.append(str(g.user.id))
+            session['group_creation_form']['members'] = list(set([int(mid) for mid in member_ids]))
+            session.modified = True
+            return redirect(url_for('create_group_step', step=4))
+
+        # --- Step 4: Assign Admins ---
+        elif step == 4:
+            admin_ids = request.form.getlist('admins')
+            # Ensure creator is always an admin
+            if str(g.user.id) not in admin_ids:
+                admin_ids.append(str(g.user.id))
+            session['group_creation_form']['admins'] = list(set([int(aid) for aid in admin_ids]))
+            session.modified = True
+            return redirect(url_for('finish_group_creation'))
+
+    # --- Handle GET requests ---
+    template_name = f'create_group_step{step}.html'
+    form_data=session.get('group_creation_form', {})
+
+    if step == 3:
+        current_members = form_data.get('members', [])
+        # Show users that the current user is following
+        users_to_show = g.user.followed.filter(~User.id.in_(current_members)).all()
+        return render_template(template_name, users=users_to_show, form_data=form_data)
+    elif step == 4:
+        member_ids = form_data.get('members', [])
+        members = User.query.filter(User.id.in_(member_ids)).all()
+        return render_template(template_name, members=members, current_user_id=g.user.id, form_data=form_data)
+
+    return render_template(template_name, form_data=form_data)
+
+@app.route('/chat/create_group/finish', methods=['POST'])
+@login_required
+def finish_group_creation():
+    form_data = session.get('group_creation_form')
+    if not form_data or 'name' not in form_data:
+        flash('An error occurred. Please start over.', 'error')
+        return redirect(url_for('create_group'))
+
+    try:
+        # Create Conversation
+        new_convo = Conversation(
+            is_group=True,
+            name=form_data['name'],
+            description=form_data.get('description', '')
+            # TODO: Add photo path handling here if implemented
+        )
+        db.session.add(new_convo)
+        db.session.flush() # Flush to get the new_convo.id
+
+        # Add Participants
+        member_ids = form_data.get('members', [])
+        admin_ids = form_data.get('admins', [])
+
+        # Ensure creator is an admin
+        if g.user.id not in admin_ids:
+            admin_ids.append(g.user.id)
+
+        for member_id in member_ids:
+            role = 'admin' if member_id in admin_ids else 'member'
+            participant = Participant(
+                user_id=member_id,
+                conversation_id=new_convo.id,
+                role=role
+            )
+            db.session.add(participant)
+
+        db.session.commit()
+        session.pop('group_creation_form', None)
+        flash('Group created successfully!', 'success')
+        return redirect(url_for('message_thread', conversation_id=new_convo.id))
+    except Exception as e:
+        db.session.rollback()
+        flash(f'An error occurred while creating the group: {e}', 'error')
+        return redirect(url_for('create_group'))
+
 
 @app.route('/chat/group/<int:conversation_id>/info')
 @login_required
@@ -830,15 +1078,40 @@ def block_user_in_chat(user_id):
 @app.route('/chat')
 @login_required
 def chat_inbox():
-    user_participant_entries = Participant.query.filter_by(user_id=g.user.id).all()
+    # Use joinedload to eager load conversations to avoid N+1 queries
+    user_participant_entries = Participant.query.options(
+        joinedload(Participant.conversation).joinedload(Conversation.participants).joinedload(Participant.user)
+    ).filter_by(user_id=g.user.id).all()
+
     active_chats = []
     message_requests = []
+    archived_chats = []
+
     for p_entry in user_participant_entries:
-        if p_entry.status == 'active':
+        if p_entry.is_archived:
+            archived_chats.append(p_entry)
+        elif p_entry.status == 'active':
             active_chats.append(p_entry)
         elif p_entry.status == 'pending':
             message_requests.append(p_entry)
-    return render_template('chat_inbox.html', active_chats=active_chats, message_requests=message_requests, Message=Message)
+
+    # Sort active chats to show pinned chats first, then by last message time
+    def get_sort_key(p_entry):
+        convo = p_entry.conversation
+        # Get the timestamp of the last message, or the conversation creation time as a fallback
+        last_message = db.session.query(Message.created_at).filter(Message.conversation_id == convo.id).order_by(Message.created_at.desc()).first()
+        last_activity = last_message[0] if last_message else convo.created_at
+        return (p_entry.is_pinned, last_activity)
+
+    active_chats.sort(key=get_sort_key, reverse=True)
+
+    return render_template(
+        'chat_inbox.html',
+        active_chats=active_chats,
+        message_requests=message_requests,
+        archived_chats=archived_chats,
+        Message=Message
+    )
 
 @app.route('/reels')
 @login_required
@@ -950,8 +1223,54 @@ def handle_send_message_event(data):
     new_message = Message(conversation_id=data['room'], user_id=user_id, body=data['message'])
     db.session.add(new_message)
     db.session.commit()
-    message_data = {'body': new_message.body, 'author_name': new_message.sender.full_name, 'author_username': new_message.sender.username, 'user_id': new_message.user_id}
+    message_data = {'body': new_message.body, 'author_name': new_message.sender.full_name, 'author_username': new_message.sender.username, 'user_id': new_message.user_id, 'message_id': new_message.id}
     emit('new_message', message_data, room=data['room'])
+
+@socketio.on('react_message')
+def handle_react_message(data):
+    user_id = session.get('user_id')
+    if not user_id: return
+
+    message_id = data.get('message_id')
+    reaction_char = data.get('reaction')
+
+    if not message_id or not reaction_char: return
+
+    # Check if user has already reacted with the same emoji
+    existing_reaction = MessageReaction.query.filter_by(
+        message_id=message_id,
+        user_id=user_id,
+        reaction=reaction_char
+    ).first()
+
+    if existing_reaction:
+        # User is removing their reaction
+        db.session.delete(existing_reaction)
+        db.session.commit()
+    else:
+        # User is adding a new reaction
+        # Optional: Limit one reaction type per user per message
+        MessageReaction.query.filter_by(message_id=message_id, user_id=user_id).delete()
+        new_reaction = MessageReaction(
+            message_id=message_id,
+            user_id=user_id,
+            reaction=reaction_char
+        )
+        db.session.add(new_reaction)
+        db.session.commit()
+
+    # Broadcast the change to everyone in the room
+    message = db.get_or_404(Message, message_id)
+    room = message.conversation_id
+    # Get updated reaction counts
+    reactions_summary = db.session.query(
+        MessageReaction.reaction, db.func.count(MessageReaction.reaction)
+    ).filter_by(message_id=message_id).group_by(MessageReaction.reaction).all()
+
+    emit('message_reaction_update', {
+        'message_id': message_id,
+        'reactions': {r: c for r, c in reactions_summary}
+    }, room=room)
 
 @socketio.on('join')
 def on_join(data):

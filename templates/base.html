@@ -8,6 +8,9 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
+    {% if request.endpoint.startswith('chat_') or request.endpoint == 'message_thread' or request.endpoint == 'group_info' %}
+        {% block chat_header %}{% endblock %}
+    {% else %}
     <header class="top-bar">
         <div class="top-bar-left">
             <a href="{{ url_for('home') }}" class="logo">GLOOBA</a>
@@ -47,8 +50,9 @@
         <a href="{{ url_for('more') }}" class="nav-icon {% if request.endpoint == 'more' %}active{% endif %}"><i class="fas fa-bars"></i></a>
     </nav>
     {% endif %}
+    {% endif %}
 
-    <main class="main-content {% if request.endpoint == 'reels' %}full-screen{% endif %}">
+    <main class="main-content {% if request.endpoint == 'reels' or request.endpoint.startswith('chat_') or request.endpoint == 'message_thread' or request.endpoint == 'group_info' %}full-screen{% endif %}">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 <div class="flash-messages">

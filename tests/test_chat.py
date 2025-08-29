@@ -11,7 +11,7 @@ def test_start_new_chat(client):
 
     response = client.get(f'/chat/start/{user2.id}', follow_redirects=True)
     assert response.status_code == 200
-    assert b'Chat with User2 User' in response.data
+    assert b'<span class="chat-header-name">User2 User</span>' in response.data
 
     convo = Conversation.query.first()
     assert convo is not None
@@ -34,7 +34,7 @@ def test_start_existing_chat(client):
 
     response = client.get(f'/chat/start/{user2.id}', follow_redirects=True)
     assert response.status_code == 200
-    assert f'Chat with User2 User' in response.data.decode()
+    assert '<span class="chat-header-name">User2 User</span>' in response.data.decode()
     assert Conversation.query.count() == 1
 
 def test_unauthorized_chat_access(client):
@@ -99,8 +99,10 @@ def test_message_request_flow(client):
     # Log in as Recipient and check inbox
     login(client, 'recipient', 'pw')
     response = client.get('/chat')
-    assert b'Requests (1)' in response.data
-    assert b'Sender User' in response.data # Check for full name, not username
+    # Check for the new badge structure
+    assert b'<span class="request-count-badge">1</span>' in response.data
+    # The sender's name will still be in the document, inside the requests tab
+    assert b'Sender User' in response.data
 
     # Recipient views the message thread and sees the request actions
     response = client.get(f'/chat/{convo.id}')
@@ -121,3 +123,105 @@ def test_message_request_flow(client):
     response = client.get('/chat')
     assert b'Requests (' not in response.data # The "Requests" tab shouldn't show a count
     assert b'Sender User' in response.data
+
+def test_pin_chat(client):
+    """Test pinning and unpinning a chat."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+    convo = Conversation()
+    p1 = Participant(user=user1, conversation=convo)
+    p2 = Participant(user=user2, conversation=convo)
+    db.session.add_all([convo, p1, p2])
+    db.session.commit()
+
+    login(client, 'user1', 'pw')
+
+    # Pin the chat
+    client.post(f'/chat/pin/{convo.id}', follow_redirects=True)
+    participant = Participant.query.filter_by(user_id=user1.id, conversation_id=convo.id).first()
+    assert participant.is_pinned is True
+
+    # Unpin the chat
+    client.post(f'/chat/pin/{convo.id}', follow_redirects=True)
+    db.session.refresh(participant)
+    assert participant.is_pinned is False
+
+def test_archive_chat(client):
+    """Test archiving and unarchiving a chat."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+    convo = Conversation()
+    p1 = Participant(user=user1, conversation=convo)
+    p2 = Participant(user=user2, conversation=convo)
+    db.session.add_all([convo, p1, p2])
+    db.session.commit()
+
+    login(client, 'user1', 'pw')
+
+    # Archive the chat
+    client.post(f'/chat/archive/{convo.id}', follow_redirects=True)
+    participant = Participant.query.filter_by(user_id=user1.id, conversation_id=convo.id).first()
+    assert participant.is_archived is True
+
+    # Unarchive the chat
+    client.post(f'/chat/archive/{convo.id}', follow_redirects=True)
+    db.session.refresh(participant)
+    assert participant.is_archived is False
+
+def test_archived_chat_not_in_inbox(client):
+    """Test that an archived chat does not appear in the main inbox view."""
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+    convo = Conversation()
+    # Archive this conversation for user1
+    p1 = Participant(user=user1, conversation=convo, is_archived=True)
+    p2 = Participant(user=user2, conversation=convo)
+    db.session.add_all([convo, p1, p2])
+    db.session.commit()
+
+    login(client, 'user1', 'pw')
+    response = client.get('/chat')
+    assert response.status_code == 200
+
+    # We check the template context variable 'active_chats' passed to render_template
+    # In a real test suite, you might capture the template context.
+    # For this functional test, we check if the other user's name is absent from the active part of the page.
+    # This is a bit brittle but works for now. We expect the active chats to be empty.
+    assert b'No active chats yet.' in response.data
+
+def test_pinned_chat_appears_first(client, app):
+    """Test that pinned chats are sorted before unpinned chats."""
+    from datetime import datetime, timedelta, timezone
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+    user3 = register_user(username='user3', email='user3@test.com', password='pw')
+
+    now = datetime.now(timezone.utc)
+
+    # Convo 1 (unpinned, should be more recent but appear second)
+    convo1 = Conversation(created_at=now - timedelta(minutes=10))
+    p1a = Participant(user=user1, conversation=convo1)
+    p1b = Participant(user=user2, conversation=convo1)
+    msg1 = Message(conversation=convo1, sender=user2, body="Recent message", created_at=now)
+    db.session.add_all([convo1, p1a, p1b, msg1])
+
+    # Convo 2 (pinned, should be older but appear first)
+    convo2 = Conversation(created_at=now - timedelta(minutes=20))
+    p2a = Participant(user=user1, conversation=convo2, is_pinned=True)
+    p2b = Participant(user=user3, conversation=convo2)
+    msg2 = Message(conversation=convo2, sender=user3, body="Older message", created_at=now - timedelta(minutes=5))
+    db.session.add_all([convo2, p2a, p2b, msg2])
+
+    db.session.commit()
+
+    login(client, 'user1', 'pw')
+    response = client.get('/chat')
+    assert response.status_code == 200
+
+    data = response.data.decode()
+    pos_pinned = data.find('User3 User')
+    pos_unpinned = data.find('User2 User')
+
+    assert pos_pinned != -1, "Pinned chat user's name not found in response"
+    assert pos_unpinned != -1, "Unpinned chat user's name not found in response"
+    assert pos_pinned < pos_unpinned, "Pinned chat did not appear before unpinned chat"
