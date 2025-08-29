@@ -9,6 +9,7 @@ import click
 from flask.cli import with_appcontext
 from functools import wraps
 import humanize
+import re
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_migrate import Migrate
 
@@ -640,7 +641,12 @@ def message_thread(conversation_id):
 
     messages = messages_query.all()
     other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
-    return render_template('message_thread.html', conversation=convo, messages=messages, other_user=other_user)
+
+    group_members = []
+    if convo.is_group:
+        group_members = [{'id': p.user.id, 'username': p.user.username, 'full_name': p.user.full_name} for p in convo.participants]
+
+    return render_template('message_thread.html', conversation=convo, messages=messages, other_user=other_user, group_members=group_members)
 
 @app.route('/chat/start/<int:user_id>')
 @login_required
@@ -1444,6 +1450,28 @@ def handle_send_message_event(data):
         'timestamp': new_message.created_at.isoformat()
     }
     emit('new_message', message_data, room=data['room'])
+
+    # Handle mentions in text messages
+    if new_message.content_type == 'text' and new_message.body:
+        mentions = re.findall(r'@(\w+)', new_message.body)
+        if mentions:
+            notified_users = set()
+            for username in set(mentions): # Use set to avoid duplicate notifications for same @mention
+                if username in notified_users:
+                    continue
+
+                mentioned_user = User.query.filter_by(username=username).first()
+                # Ensure user exists, is in the convo, and is not the sender
+                if mentioned_user and mentioned_user.id != user_id and mentioned_user.id in participant_user_ids:
+                    mention_notification = Notification(
+                        recipient_id=mentioned_user.id,
+                        sender_id=user_id,
+                        type='mention',
+                        related_id=new_message.conversation_id # Link to the conversation
+                    )
+                    db.session.add(mention_notification)
+                    notified_users.add(username)
+            db.session.commit()
 
 @socketio.on('react_message')
 def handle_react_message(data):

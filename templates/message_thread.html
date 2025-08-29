@@ -85,12 +85,15 @@
         </div>
     </div>
     {% else %}
-    <div class="message-input-bar">
-        <input type="file" id="file-input" style="display: none;" accept="image/*,application/pdf,application/msword,text/plain">
-        <button class="icon-button attachment-btn"><i class="fas fa-plus"></i></button>
-        <input type="text" id="message-input" class="message-input-field" placeholder="Type a message...">
-        <button class="icon-button mic-btn"><i class="fas fa-microphone"></i></button>
-        <button class="icon-button send-btn" style="display: none;"><i class="fas fa-paper-plane"></i></button>
+    <div class="message-input-container">
+        <div id="mention-suggestions" class="mention-suggestions-popup"></div>
+        <div class="message-input-bar">
+            <input type="file" id="file-input" style="display: none;" accept="image/*,application/pdf,application/msword,text/plain">
+            <button class="icon-button attachment-btn"><i class="fas fa-plus"></i></button>
+            <input type="text" id="message-input" class="message-input-field" placeholder="Type a message...">
+            <button class="icon-button mic-btn"><i class="fas fa-microphone"></i></button>
+            <button class="icon-button send-btn" style="display: none;"><i class="fas fa-paper-plane"></i></button>
+        </div>
     </div>
     {% endif %}
 </div>
@@ -102,6 +105,8 @@
     document.addEventListener('DOMContentLoaded', function() {
         var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
         var conversationId = "{{ conversation.id }}";
+        const isGroupChat = {{ conversation.is_group|tojson }};
+        const groupMembers = {{ group_members|tojson|safe }};
 
         // --- DOM Elements ---
         const messageList = document.getElementById('message-list');
@@ -110,6 +115,7 @@
         const micBtn = document.querySelector('.mic-btn');
         const attachmentBtn = document.querySelector('.attachment-btn');
         const fileInput = document.getElementById('file-input');
+        const mentionPopup = document.getElementById('mention-suggestions');
 
         // --- Functions ---
         function scrollToBottom() {
@@ -124,13 +130,14 @@
             msgContainer.className = `msg-container ${isSent ? 'sent' : 'received'}`;
 
             let senderNameHtml = '';
-            if ({{ conversation.is_group|tojson }} && !isSent) {
+            if (isGroupChat && !isSent) {
                 senderNameHtml = `<span class="sender-name">${msg.author_name || 'User'}</span>`;
             }
 
             let messageContentHtml = '';
             if (msg.content_type === 'text') {
-                messageContentHtml = `<p class="msg-text">${msg.body}</p>`;
+                const highlightedBody = msg.body.replace(/@(\w+)/g, '<strong>@$1</strong>');
+                messageContentHtml = `<p class="msg-text">${highlightedBody}</p>`;
             } else if (msg.content_type === 'image') {
                 const imageUrl = `/static/${msg.file_path}`;
                 messageContentHtml = `<img src="${imageUrl}" alt="User image" class="msg-image">`;
@@ -190,6 +197,37 @@
             }
         }
 
+        function showMentionSuggestions(query) {
+            mentionPopup.innerHTML = '';
+            const filteredMembers = groupMembers.filter(member =>
+                member.username.toLowerCase().startsWith(query.toLowerCase()) ||
+                member.full_name.toLowerCase().startsWith(query.toLowerCase())
+            );
+
+            if(filteredMembers.length === 0) {
+                mentionPopup.style.display = 'none';
+                return;
+            }
+
+            filteredMembers.forEach(member => {
+                const item = document.createElement('div');
+                item.className = 'mention-item';
+                item.textContent = `${member.full_name} (@${member.username})`;
+                item.onclick = () => insertMention(member.username);
+                mentionPopup.appendChild(item);
+            });
+            mentionPopup.style.display = 'block';
+        }
+
+        function insertMention(username) {
+            const currentText = messageInput.value;
+            const atIndex = currentText.lastIndexOf('@');
+            const newText = currentText.substring(0, atIndex) + `@${username} `;
+            messageInput.value = newText;
+            mentionPopup.style.display = 'none';
+            messageInput.focus();
+        }
+
         // --- Socket.IO Event Handlers ---
         socket.on('connect', function() {
             socket.emit('join', {room: conversationId});
@@ -205,13 +243,14 @@
             if (message.trim() !== '') {
                 socket.emit('send_message', {room: conversationId, message: message, content_type: 'text'});
                 messageInput.value = '';
+                mentionPopup.style.display = 'none';
                 messageInput.dispatchEvent(new Event('input'));
             }
         }
 
         sendBtn.addEventListener('click', sendMessage);
         messageInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
             }
@@ -224,6 +263,17 @@
             } else {
                 micBtn.style.display = 'block';
                 sendBtn.style.display = 'none';
+            }
+
+            const text = messageInput.value;
+            const atIndex = text.lastIndexOf('@');
+            const spaceIndex = text.lastIndexOf(' ');
+
+            if (isGroupChat && atIndex > spaceIndex) {
+                const query = text.substring(atIndex + 1);
+                showMentionSuggestions(query);
+            } else {
+                mentionPopup.style.display = 'none';
             }
         });
 
@@ -243,6 +293,30 @@
     });
 </script>
 <style>
+    .message-input-container {
+        position: relative;
+    }
+    .mention-suggestions-popup {
+        display: none;
+        position: absolute;
+        bottom: 100%;
+        left: 0;
+        right: 0;
+        background: white;
+        border: 1px solid #dbdbdb;
+        border-radius: 8px;
+        box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        max-height: 200px;
+        overflow-y: auto;
+        margin-bottom: 5px;
+    }
+    .mention-item {
+        padding: 10px 15px;
+        cursor: pointer;
+    }
+    .mention-item:hover {
+        background-color: #f0f2f5;
+    }
     .msg-image {
         max-width: 100%;
         border-radius: 15px;
