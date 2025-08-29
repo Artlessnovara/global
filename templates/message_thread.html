@@ -44,6 +44,19 @@
 
 {% block content %}
 <div class="message-thread-area">
+    {% if conversation.pinned_message %}
+    <div class="pinned-message-bar">
+        <i class="fas fa-thumbtack"></i>
+        <div class="pinned-message-content">
+            <span class="pinned-sender">{{ conversation.pinned_message.sender.full_name }}</span>
+            <p class="pinned-text">{{ conversation.pinned_message.body }}</p>
+        </div>
+        <form action="{{ url_for('unpin_message', conversation_id=conversation.id) }}" method="POST">
+            <button type="submit" class="unpin-btn">&times;</button>
+        </form>
+    </div>
+    {% endif %}
+
     <div class="message-list" id="message-list">
         {% for message in messages %}
             <div class="msg-container {% if message.user_id == g.user.id %}sent{% else %}received{% endif %}">
@@ -52,7 +65,7 @@
                 {% endif %}
                 <div class="msg-bubble">
                     {% if message.content_type == 'text' %}
-                        <p class="msg-text">{{ message.body }}</p>
+                        <p class="msg-text">{{ message.body | replace('@(\\w+)', '<strong>@\\1</strong>') | safe }}</p>
                     {% elif message.content_type == 'image' %}
                         <img src="{{ url_for('static', filename=message.file_path) }}" alt="User image" class="msg-image">
                         {% if message.body %}<p class="msg-caption">{{ message.body }}</p>{% endif %}
@@ -66,9 +79,14 @@
                     <div class="msg-meta">
                         <span class="msg-timestamp">{{ message.created_at.strftime('%H:%M') }}</span>
                         {% if message.user_id == g.user.id %}
-                        <i class="fas fa-check-double msg-status-icon"></i> {# Placeholder #}
+                        <i class="fas fa-check-double msg-status-icon"></i>
                         {% endif %}
                     </div>
+                    {% if conversation.is_group %} {# Assuming only group admins can pin #}
+                    <form action="{{ url_for('pin_message', conversation_id=conversation.id, message_id=message.id) }}" method="POST" class="pin-form">
+                        <button type="submit" class="pin-btn"><i class="fas fa-thumbtack"></i></button>
+                    </form>
+                    {% endif %}
                 </div>
             </div>
         {% endfor %}
@@ -293,6 +311,40 @@
     });
 </script>
 <style>
+    .pinned-message-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 15px;
+        background-color: #f0f2f5;
+        border-bottom: 1px solid #e0e0e0;
+        flex-shrink: 0;
+    }
+    .pinned-message-bar i { color: #657786; }
+    .pinned-message-content { flex-grow: 1; }
+    .pinned-sender { font-weight: bold; font-size: 14px; }
+    .pinned-text { margin: 0; font-size: 14px; color: #333; }
+    .unpin-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: #657786; }
+
+    .msg-bubble { position: relative; }
+    .pin-form {
+        position: absolute;
+        top: -10px;
+        right: -10px;
+        display: none;
+    }
+    .msg-bubble:hover .pin-form {
+        display: block;
+    }
+    .pin-btn {
+        background: #e4e6eb;
+        border: none;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        font-size: 12px;
+        cursor: pointer;
+    }
     .message-input-container {
         position: relative;
     }

@@ -161,6 +161,42 @@ def test_mention_notification(app):
 
         socketio_client.disconnect()
 
+def test_pin_and_unpin_message(client):
+    """Test that a group admin can pin and unpin a message."""
+    # Setup
+    admin = register_user(username='admin', email='admin@test.com', password='pw')
+    member = register_user(username='member', email='member@test.com', password='pw')
+    convo = Conversation(is_group=True, name="Pin Test Group")
+    p1 = Participant(user=admin, conversation=convo, role='admin')
+    p2 = Participant(user=member, conversation=convo)
+    msg = Message(conversation=convo, sender=member, body="This is a message to be pinned.")
+    db.session.add_all([convo, p1, p2, msg])
+    db.session.commit()
+
+    # Log in as admin
+    login(client, 'admin', 'pw')
+
+    # Pin the message
+    response = client.post(f'/chat/{convo.id}/pin/{msg.id}', follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Message pinned.' in response.data
+
+    db.session.refresh(convo)
+    assert convo.pinned_message_id == msg.id
+
+    # Verify pinned message is displayed
+    response = client.get(f'/chat/{convo.id}')
+    assert b'pinned-message-bar' in response.data
+    assert b'This is a message to be pinned.' in response.data
+
+    # Unpin the message
+    response = client.post(f'/chat/{convo.id}/unpin', follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Message unpinned.' in response.data
+
+    db.session.refresh(convo)
+    assert convo.pinned_message_id is None
+
 def test_message_request_flow(client):
     """Test the full message request workflow."""
     sender = register_user(username='sender', email='sender@test.com', password='pw')

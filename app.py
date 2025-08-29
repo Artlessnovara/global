@@ -190,8 +190,10 @@ class Conversation(db.Model):
     is_invite_link_enabled = db.Column(db.Boolean, default=True)
     is_public = db.Column(db.Boolean, default=False, nullable=False)
     disappearing_timer_seconds = db.Column(db.Integer, nullable=True)
-    messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade="all, delete-orphan")
+    pinned_message_id = db.Column(db.Integer, db.ForeignKey('messages.id'), nullable=True)
+    messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade="all, delete-orphan", foreign_keys='Message.conversation_id')
     participants = db.relationship('Participant', back_populates='conversation', cascade="all, delete-orphan")
+    pinned_message = db.relationship('Message', foreign_keys=[pinned_message_id])
 
     def unread_messages_for(self, user):
         participant = next((p for p in self.participants if p.user_id == user.id), None)
@@ -623,7 +625,7 @@ def suggestions():
 @app.route('/chat/<int:conversation_id>')
 @login_required
 def message_thread(conversation_id):
-    convo = db.get_or_404(Conversation, conversation_id)
+    convo = Conversation.query.options(joinedload(Conversation.pinned_message)).filter_by(id=conversation_id).first_or_404()
     participant_users = [p.user for p in convo.participants]
     if g.user not in participant_users:
         return "Not your conversation", 403
@@ -886,6 +888,40 @@ def join_group_with_invite(invite_code):
 
     flash('You have successfully joined the group!', 'success')
     return redirect(url_for('message_thread', conversation_id=conversation.id))
+
+@app.route('/chat/<int:conversation_id>/pin/<int:message_id>', methods=['POST'])
+@login_required
+def pin_message(conversation_id, message_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+
+    if not participant or (convo.is_group and participant.role != 'admin'):
+        flash('You do not have permission to pin messages in this chat.', 'error')
+        return redirect(url_for('message_thread', conversation_id=conversation_id))
+
+    message_to_pin = db.get_or_404(Message, message_id)
+    if message_to_pin.conversation_id != convo.id:
+        return "Message not in this conversation", 403
+
+    convo.pinned_message_id = message_id
+    db.session.commit()
+    flash('Message pinned.', 'success')
+    return redirect(url_for('message_thread', conversation_id=conversation_id))
+
+@app.route('/chat/<int:conversation_id>/unpin', methods=['POST'])
+@login_required
+def unpin_message(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+
+    if not participant or (convo.is_group and participant.role != 'admin'):
+        flash('You do not have permission to unpin messages in this chat.', 'error')
+        return redirect(url_for('message_thread', conversation_id=conversation_id))
+
+    convo.pinned_message_id = None
+    db.session.commit()
+    flash('Message unpinned.', 'success')
+    return redirect(url_for('message_thread', conversation_id=conversation_id))
 
 
 @app.route('/chat/group/<int:conversation_id>/add_members', methods=['GET', 'POST'])
