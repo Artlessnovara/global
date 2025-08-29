@@ -187,6 +187,7 @@ class Conversation(db.Model):
     group_photo_path = db.Column(db.String(255), nullable=True)
     invite_code = db.Column(db.String(16), unique=True, default=lambda: secrets.token_urlsafe(12))
     is_invite_link_enabled = db.Column(db.Boolean, default=True)
+    disappearing_timer_seconds = db.Column(db.Integer, nullable=True)
     messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade="all, delete-orphan")
     participants = db.relationship('Participant', back_populates='conversation', cascade="all, delete-orphan")
 
@@ -626,7 +627,15 @@ def message_thread(conversation_id):
     if participant:
         participant.last_read_at = datetime.now(timezone.utc)
         db.session.commit()
-    messages = convo.messages.order_by(Message.created_at.asc()).all()
+
+    messages_query = convo.messages.order_by(Message.created_at.asc())
+
+    # Filter for disappearing messages
+    if convo.disappearing_timer_seconds:
+        cutoff_time = datetime.now(timezone.utc) - timedelta(seconds=convo.disappearing_timer_seconds)
+        messages_query = messages_query.filter(Message.created_at >= cutoff_time)
+
+    messages = messages_query.all()
     other_user = next((p.user for p in convo.participants if p.user_id != g.user.id), None)
     return render_template('message_thread.html', conversation=convo, messages=messages, other_user=other_user)
 
@@ -1045,6 +1054,27 @@ def finish_group_creation():
         db.session.rollback()
         flash(f'An error occurred while creating the group: {e}', 'error')
         return redirect(url_for('create_group'))
+
+@app.route('/chat/<int:conversation_id>/settings/disappearing', methods=['POST'])
+@login_required
+def set_disappearing_timer(conversation_id):
+    convo = db.get_or_404(Conversation, conversation_id)
+    participant = next((p for p in convo.participants if p.user_id == g.user.id), None)
+
+    # In a real app, you'd have more robust role/permission checking here
+    if not participant or (convo.is_group and participant.role != 'admin'):
+        flash('You do not have permission to change this setting.', 'error')
+        return redirect(request.referrer or url_for('home'))
+
+    timer_seconds = request.form.get('timer', type=int)
+    if timer_seconds is not None:
+        convo.disappearing_timer_seconds = timer_seconds if timer_seconds > 0 else None
+        db.session.commit()
+        flash('Disappearing messages setting updated.', 'success')
+    else:
+        flash('Invalid timer value.', 'error')
+
+    return redirect(request.referrer or url_for('message_thread', conversation_id=convo.id))
 
 
 @app.route('/chat/group/<int:conversation_id>/info')

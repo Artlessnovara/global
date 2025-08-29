@@ -50,6 +50,22 @@
         <div class="admin-section">
             <a href="{{ url_for('add_members', conversation_id=conversation.id) }}" class="btn-profile-action">Add Members</a>
         </div>
+
+        <div class="admin-section">
+            <h3>Disappearing Messages</h3>
+            <p class="info-text">Turn on disappearing messages to have new messages disappear from this chat after a set amount of time.</p>
+            <form action="{{ url_for('set_disappearing_timer', conversation_id=conversation.id) }}" method="POST">
+                <div class="form-group">
+                    <label for="timer">Message Timer</label>
+                    <select name="timer" id="timer" class="form-control" onchange="this.form.submit()">
+                        <option value="0" {% if not conversation.disappearing_timer_seconds %}selected{% endif %}>Off</option>
+                        <option value="86400" {% if conversation.disappearing_timer_seconds == 86400 %}selected{% endif %}>24 hours</option>
+                        <option value="604800" {% if conversation.disappearing_timer_seconds == 604800 %}selected{% endif %}>7 days</option>
+                        <option value="2592000" {% if conversation.disappearing_timer_seconds == 2592000 %}selected{% endif %}>30 days</option>
+                    </select>
+                </div>
+            </form>
+        </div>
     </div>
     {% endif %}
 

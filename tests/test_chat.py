@@ -225,3 +225,42 @@ def test_pinned_chat_appears_first(client, app):
     assert pos_pinned != -1, "Pinned chat user's name not found in response"
     assert pos_unpinned != -1, "Unpinned chat user's name not found in response"
     assert pos_pinned < pos_unpinned, "Pinned chat did not appear before unpinned chat"
+
+def test_disappearing_messages(client, app):
+    """Test that disappearing messages are filtered correctly."""
+    from datetime import timedelta
+    import time
+
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+
+    # Create a group conversation
+    convo = Conversation(is_group=True, name="Test Group")
+    p1 = Participant(user=user1, conversation=convo, role='admin')
+    p2 = Participant(user=user2, conversation=convo)
+    db.session.add_all([convo, p1, p2])
+    db.session.commit()
+
+    login(client, 'user1', 'pw')
+
+    # Set a 1-second timer
+    client.post(f'/chat/{convo.id}/settings/disappearing', data={'timer': 1})
+
+    # Send a message
+    socketio_client = socketio.test_client(app, flask_test_client=client)
+    socketio_client.emit('join', {'room': str(convo.id)})
+    socketio_client.emit('send_message', {'room': str(convo.id), 'message': 'This will disappear'})
+
+    # Give a moment for the message to be processed and saved
+    time.sleep(0.1)
+
+    # Verify the message exists initially
+    response = client.get(f'/chat/{convo.id}')
+    assert b'This will disappear' in response.data
+
+    # Wait for the message to expire
+    time.sleep(1)
+
+    # Verify the message is gone
+    response = client.get(f'/chat/{convo.id}')
+    assert b'This will disappear' not in response.data
