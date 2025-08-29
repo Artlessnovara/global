@@ -6,6 +6,21 @@
     <title>{% block title %}GLOOBA{% endblock %}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script>
+        // IIFE to set theme immediately, preventing FOUC (Flash of Unstyled Content)
+        (function() {
+            const theme = localStorage.getItem('theme');
+            if (theme === 'dark') {
+                document.body.dataset.theme = 'dark';
+            } else if (theme === 'light') {
+                document.body.dataset.theme = 'light';
+            } else { // 'system' or null
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    document.body.dataset.theme = 'dark';
+                }
+            }
+        })();
+    </script>
 </head>
 <body>
     {% if request.endpoint.startswith('chat_') or request.endpoint == 'message_thread' or request.endpoint == 'group_info' %}
@@ -110,5 +125,40 @@
         }
     </script>
     {% block scripts %}{% endblock %}
+    <script>
+        // This script should run on all pages to handle theme button clicks if they exist
+        document.addEventListener('DOMContentLoaded', function() {
+            const themeButtons = document.querySelectorAll('.theme-btn');
+
+            function applyTheme(theme) {
+                if (theme === 'dark') {
+                    document.body.dataset.theme = 'dark';
+                } else if (theme === 'light') {
+                    document.body.dataset.theme = 'light';
+                } else { // system
+                    document.body.removeAttribute('data-theme');
+                    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                        document.body.dataset.theme = 'dark';
+                    }
+                }
+            }
+
+            themeButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const theme = this.dataset.theme;
+                    localStorage.setItem('theme', theme);
+                    applyTheme(theme);
+                });
+            });
+
+            // Listen for changes in system preference
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+                const currentTheme = localStorage.getItem('theme');
+                if (currentTheme === 'system' || currentTheme === null) {
+                    applyTheme('system');
+                }
+            });
+        });
+    </script>
 </body>
 </html>
