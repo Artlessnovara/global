@@ -11,7 +11,7 @@ def test_start_new_chat(client):
 
     response = client.get(f'/chat/start/{user2.id}', follow_redirects=True)
     assert response.status_code == 200
-    assert b'Chat with User2 User' in response.data
+    assert b'<span class="chat-header-name">User2 User</span>' in response.data
 
     convo = Conversation.query.first()
     assert convo is not None
@@ -34,7 +34,7 @@ def test_start_existing_chat(client):
 
     response = client.get(f'/chat/start/{user2.id}', follow_redirects=True)
     assert response.status_code == 200
-    assert f'Chat with User2 User' in response.data.decode()
+    assert '<span class="chat-header-name">User2 User</span>' in response.data.decode()
     assert Conversation.query.count() == 1
 
 def test_unauthorized_chat_access(client):
