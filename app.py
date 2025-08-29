@@ -1135,11 +1135,23 @@ def chat_inbox():
 
     active_chats.sort(key=get_sort_key, reverse=True)
 
+    # Get a set of all user IDs involved in the conversations
+    all_participant_ids = {p.user_id for p_entry in user_participant_entries for p in p_entry.conversation.participants}
+
+    # Find which of those users have active stories
+    now = datetime.now(timezone.utc)
+    users_with_stories = db.session.query(Story.user_id).filter(
+        Story.user_id.in_(all_participant_ids),
+        Story.expires_at > now
+    ).distinct().all()
+    user_ids_with_stories = {user_id for user_id, in users_with_stories}
+
     return render_template(
         'chat_inbox.html',
         active_chats=active_chats,
         message_requests=message_requests,
         archived_chats=archived_chats,
+        user_ids_with_stories=user_ids_with_stories,
         Message=Message
     )
 
@@ -1162,6 +1174,24 @@ def discover_modes():
     """Displays all available modes for users to browse."""
     all_modes = Mode.query.order_by(Mode.name).all()
     return render_template('discover_modes.html', modes=all_modes)
+
+@app.route('/stories/user/<int:user_id>')
+@login_required
+def view_user_stories(user_id):
+    now = datetime.now(timezone.utc)
+    # Find the most recent, active story for this user
+    latest_story = Story.query.filter(
+        Story.user_id == user_id,
+        Story.expires_at > now
+    ).order_by(Story.created_at.desc()).first()
+
+    if latest_story:
+        return redirect(url_for('story_viewer', story_id=latest_story.id))
+    else:
+        # If no active story, you might want to redirect to the user's profile
+        # or back to the inbox with a flash message.
+        flash('This user has no active stories.', 'info')
+        return redirect(request.referrer or url_for('home'))
 
 @app.route('/story/<int:story_id>')
 @login_required
