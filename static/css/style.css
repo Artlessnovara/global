@@ -1593,13 +1593,20 @@ body:has(.main-nav) {
 .chat-row {
     display: flex;
     align-items: center;
-    padding: 12px 15px;
     text-decoration: none;
     color: inherit;
-    border-bottom: 1px solid #f0f0f0;
+    /* border-bottom is now on the wrapper */
 }
 .chat-row:hover {
     background-color: #f7f7f7;
+}
+.chat-row-link {
+    display: flex;
+    align-items: center;
+    padding: 12px 15px;
+    text-decoration: none;
+    color: inherit;
+    flex-grow: 1;
 }
 
 .chat-avatar-container {
@@ -1906,4 +1913,60 @@ body:has(.main-nav) {
 }
 .btn-chat-action:hover {
     color: #0095f6;
+}
+
+/* --- Swipe Gestures --- */
+.chat-row-wrapper {
+    position: relative;
+    overflow: hidden; /* Hide the actions outside the wrapper */
+}
+
+.swipe-actions-container {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 80px; /* Width of the revealed action */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.swipe-actions-container.left {
+    left: 0;
+    background-color: #0095f6; /* Blue for pin */
+}
+
+.swipe-actions-container.right {
+    right: 0;
+    background-color: #e4e6eb; /* Grey for archive */
+}
+
+.swipe-form {
+    width: 100%;
+    height: 100%;
+}
+
+.swipe-action-button {
+    width: 100%;
+    height: 100%;
+    background: none;
+    border: none;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+}
+.swipe-action-button.archive {
+    color: #333;
+}
+
+.swipe-target {
+    position: relative; /* Needed for z-index */
+    z-index: 2;
+    background-color: #fff; /* Must have a background to hide actions */
+    touch-action: pan-y; /* Allow vertical scroll, handle horizontal pan in JS */
+    transition: transform 0.2s ease-out;
+}
+
+.chat-row.swiping {
+    transition: none; /* Disable transition during active swipe for responsiveness */
 }
