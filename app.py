@@ -203,7 +203,9 @@ class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    body = db.Column(db.Text, nullable=False)
+    content_type = db.Column(db.String(20), default='text', nullable=False) # text, image, video, file
+    body = db.Column(db.Text, nullable=True) # For text messages or captions
+    file_path = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     sender = db.relationship('User')
 
@@ -1077,6 +1079,32 @@ def set_disappearing_timer(conversation_id):
 
     return redirect(request.referrer or url_for('message_thread', conversation_id=convo.id))
 
+@app.route('/chat/upload_file', methods=['POST'])
+@login_required
+def upload_chat_file():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    if file:
+        filename = secure_filename(file.filename)
+        # Ensure chat_media directory exists
+        chat_media_dir = os.path.join(app.static_folder, 'chat_media')
+        os.makedirs(chat_media_dir, exist_ok=True)
+
+        # Create a unique filename to avoid collisions
+        unique_filename = f"{g.user.id}_{int(datetime.now(timezone.utc).timestamp())}_{filename}"
+        file_path = os.path.join(chat_media_dir, unique_filename)
+        file.save(file_path)
+
+        # Return the relative path to be stored in the DB
+        relative_path = os.path.join('chat_media', unique_filename)
+        return jsonify({'file_path': relative_path})
+
+    return jsonify({'error': 'File upload failed'}), 500
+
 
 @app.route('/chat/group/<int:conversation_id>/info')
 @login_required
@@ -1387,10 +1415,34 @@ def handle_send_message_event(data):
         if not participant or participant.role not in ['host', 'co-host', 'participant']:
             return # Listeners cannot send messages
 
-    new_message = Message(conversation_id=data['room'], user_id=user_id, body=data['message'])
+    content_type = data.get('content_type', 'text')
+    body = data.get('message') # For text or captions
+    file_path = data.get('file_path')
+
+    if content_type != 'text' and not file_path:
+        # Can't have a media message without a file
+        return
+
+    new_message = Message(
+        conversation_id=data['room'],
+        user_id=user_id,
+        content_type=content_type,
+        body=body,
+        file_path=file_path
+    )
     db.session.add(new_message)
     db.session.commit()
-    message_data = {'body': new_message.body, 'author_name': new_message.sender.full_name, 'author_username': new_message.sender.username, 'user_id': new_message.user_id, 'message_id': new_message.id}
+
+    message_data = {
+        'body': new_message.body,
+        'author_name': new_message.sender.full_name,
+        'author_username': new_message.sender.username,
+        'user_id': new_message.user_id,
+        'message_id': new_message.id,
+        'content_type': new_message.content_type,
+        'file_path': new_message.file_path,
+        'timestamp': new_message.created_at.isoformat()
+    }
     emit('new_message', message_data, room=data['room'])
 
 @socketio.on('react_message')
