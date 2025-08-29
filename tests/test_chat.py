@@ -1,6 +1,7 @@
 import pytest
+from datetime import datetime, timezone
 from tests.test_auth import register_user, login
-from app import db, User, Conversation, Message, Participant, socketio
+from app import db, User, Conversation, Message, Participant, socketio, Story
 
 def test_start_new_chat(client):
     """Test starting a new conversation."""
@@ -264,3 +265,44 @@ def test_disappearing_messages(client, app):
     # Verify the message is gone
     response = client.get(f'/chat/{convo.id}')
     assert b'This will disappear' not in response.data
+
+def test_story_indicator_in_chat_inbox(client, app):
+    """Test that a story indicator appears for users with active stories."""
+    from datetime import timedelta
+
+    user1 = register_user(username='user1', email='user1@test.com', password='pw')
+    user2 = register_user(username='user2', email='user2@test.com', password='pw')
+
+    # user2 creates a story
+    story = Story(author=user2, media_path='stories/test.jpg')
+    db.session.add(story)
+
+    # Create a conversation between them
+    convo = Conversation()
+    p1 = Participant(user=user1, conversation=convo)
+    p2 = Participant(user=user2, conversation=convo)
+    db.session.add_all([convo, p1, p2])
+    db.session.commit()
+
+    login(client, 'user1', 'pw')
+    response = client.get('/chat')
+    assert response.status_code == 200
+
+    # Check for the 'has-story' class on the container of user2's avatar
+    expected_html_div = f'<div class="chat-avatar-container has-story">'
+    assert expected_html_div in response.data.decode()
+
+    # Check that the link around the avatar points to the correct story route
+    expected_link = f'<a href="/stories/user/{user2.id}">'
+    assert expected_link in response.data.decode()
+
+    # Test the redirection
+    response = client.get(f'/stories/user/{user2.id}', follow_redirects=False)
+    assert response.status_code == 302
+    assert response.location == f'/story/{story.id}'
+
+    # Test that an expired story does not show the indicator
+    story.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    db.session.commit()
+    response = client.get('/chat')
+    assert expected_html_div not in response.data.decode()

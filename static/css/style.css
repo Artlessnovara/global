@@ -1970,3 +1970,9 @@ body:has(.main-nav) {
 .chat-row.swiping {
     transition: none; /* Disable transition during active swipe for responsiveness */
 }
+
+/* --- Story Indicator in Chat List --- */
+.chat-avatar-container.has-story .chat-avatar {
+    border: 3px solid #0095f6;
+    padding: 2px;
+}

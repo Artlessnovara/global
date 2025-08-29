@@ -61,16 +61,18 @@
                         </div>
 
                         <div class="chat-row swipe-target {% if p_entry.is_pinned %}pinned{% endif %}">
+                            {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
+                            {% set avatar_user = other_participant.user if other_participant else g.user %}
+                            <div class="chat-avatar-container {% if avatar_user.id in user_ids_with_stories %}has-story{% endif %}">
+                                <a href="{{ url_for('view_user_stories', user_id=avatar_user.id) }}">
+                                {% if convo.is_group %}
+                                     <img src="{{ url_for('static', filename=convo.group_photo_path or 'img/default_group.png') }}" alt="{{ convo.name }}'s avatar" class="chat-avatar">
+                                {% else %}
+                                    <img src="https://i.pravatar.cc/150?u={{ avatar_user.username }}" alt="{{ avatar_user.username }}'s avatar" class="chat-avatar">
+                                {% endif %}
+                                </a>
+                            </div>
                             <a href="{{ url_for('message_thread', conversation_id=convo.id) }}" class="chat-row-link">
-                                <div class="chat-avatar-container">
-                                    {% set other_participant = convo.participants|rejectattr('user_id', 'equalto', g.user.id)|first %}
-                                    {% if convo.is_group %}
-                                         <img src="{{ url_for('static', filename=convo.group_photo_path or 'img/default_group.png') }}" alt="{{ convo.name }}'s avatar" class="chat-avatar">
-                                    {% elif other_participant %}
-                                        {% set other_user = other_participant.user %}
-                                        <img src="https://i.pravatar.cc/150?u={{ other_user.username }}" alt="{{ other_user.username }}'s avatar" class="chat-avatar">
-                                    {% endif %}
-                                </div>
                                 <div class="chat-details">
                                     <div class="chat-row-top">
                                         <span class="chat-name">
