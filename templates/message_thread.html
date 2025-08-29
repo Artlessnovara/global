@@ -51,7 +51,18 @@
                     <span class="sender-name">{{ message.sender.full_name }}</span>
                 {% endif %}
                 <div class="msg-bubble">
-                    <p class="msg-text">{{ message.body }}</p>
+                    {% if message.content_type == 'text' %}
+                        <p class="msg-text">{{ message.body }}</p>
+                    {% elif message.content_type == 'image' %}
+                        <img src="{{ url_for('static', filename=message.file_path) }}" alt="User image" class="msg-image">
+                        {% if message.body %}<p class="msg-caption">{{ message.body }}</p>{% endif %}
+                    {% else %}
+                        <a href="{{ url_for('static', filename=message.file_path) }}" class="msg-file-link" target="_blank">
+                            <i class="fas fa-file-alt"></i>
+                            <span>{{ message.file_path.split('_')[-1] }}</span>
+                        </a>
+                        {% if message.body %}<p class="msg-caption">{{ message.body }}</p>{% endif %}
+                    {% endif %}
                     <div class="msg-meta">
                         <span class="msg-timestamp">{{ message.created_at.strftime('%H:%M') }}</span>
                         {% if message.user_id == g.user.id %}
@@ -75,6 +86,7 @@
     </div>
     {% else %}
     <div class="message-input-bar">
+        <input type="file" id="file-input" style="display: none;" accept="image/*,application/pdf,application/msword,text/plain">
         <button class="icon-button attachment-btn"><i class="fas fa-plus"></i></button>
         <input type="text" id="message-input" class="message-input-field" placeholder="Type a message...">
         <button class="icon-button mic-btn"><i class="fas fa-microphone"></i></button>
@@ -96,6 +108,8 @@
         const messageInput = document.getElementById('message-input');
         const sendBtn = document.querySelector('.send-btn');
         const micBtn = document.querySelector('.mic-btn');
+        const attachmentBtn = document.querySelector('.attachment-btn');
+        const fileInput = document.getElementById('file-input');
 
         // --- Functions ---
         function scrollToBottom() {
@@ -107,45 +121,73 @@
             const isSent = msg.user_id === currentUserId;
 
             const msgContainer = document.createElement('div');
-            msgContainer.classList.add('msg-container', isSent ? 'sent' : 'received');
+            msgContainer.className = `msg-container ${isSent ? 'sent' : 'received'}`;
 
-            // Add sender name for group chats
-            {% if conversation.is_group %}
-            if (!isSent) {
-                const senderName = document.createElement('span');
-                senderName.classList.add('sender-name');
-                // The backend now sends author_name for this purpose
-                senderName.textContent = msg.author_name || 'User';
-                msgContainer.appendChild(senderName);
-            }
-            {% endif %}
-
-            const msgBubble = document.createElement('div');
-            msgBubble.classList.add('msg-bubble');
-
-            const p = document.createElement('p');
-            p.classList.add('msg-text');
-            p.textContent = msg.body;
-            msgBubble.appendChild(p);
-
-            const meta = document.createElement('div');
-            meta.classList.add('msg-meta');
-
-            const timestamp = document.createElement('span');
-            timestamp.classList.add('msg-timestamp');
-            timestamp.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); // Simple time
-            meta.appendChild(timestamp);
-
-            if (isSent) {
-                const statusIcon = document.createElement('i');
-                statusIcon.classList.add('fas', 'fa-check-double', 'msg-status-icon');
-                meta.appendChild(statusIcon);
+            let senderNameHtml = '';
+            if ({{ conversation.is_group|tojson }} && !isSent) {
+                senderNameHtml = `<span class="sender-name">${msg.author_name || 'User'}</span>`;
             }
 
-            msgBubble.appendChild(meta);
-            msgContainer.appendChild(msgBubble);
+            let messageContentHtml = '';
+            if (msg.content_type === 'text') {
+                messageContentHtml = `<p class="msg-text">${msg.body}</p>`;
+            } else if (msg.content_type === 'image') {
+                const imageUrl = `/static/${msg.file_path}`;
+                messageContentHtml = `<img src="${imageUrl}" alt="User image" class="msg-image">`;
+                if(msg.body) messageContentHtml += `<p class="msg-caption">${msg.body}</p>`;
+            } else {
+                const fileUrl = `/static/${msg.file_path}`;
+                const fileName = msg.file_path.split('_').slice(2).join('_');
+                messageContentHtml = `
+                    <a href="${fileUrl}" class="msg-file-link" target="_blank">
+                        <i class="fas fa-file-alt"></i>
+                        <span>${fileName}</span>
+                    </a>`;
+                if(msg.body) messageContentHtml += `<p class="msg-caption">${msg.body}</p>`;
+            }
+
+            const timestamp = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const statusIconHtml = isSent ? '<i class="fas fa-check-double msg-status-icon"></i>' : '';
+
+            msgContainer.innerHTML = `
+                ${senderNameHtml}
+                <div class="msg-bubble">
+                    ${messageContentHtml}
+                    <div class="msg-meta">
+                        <span class="msg-timestamp">${timestamp}</span>
+                        ${statusIconHtml}
+                    </div>
+                </div>
+            `;
             messageList.appendChild(msgContainer);
             scrollToBottom();
+        }
+
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/chat/upload_file', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    const contentType = file.type.startsWith('image/') ? 'image' : 'file';
+                    socket.emit('send_message', {
+                        room: conversationId,
+                        content_type: contentType,
+                        file_path: result.file_path,
+                        message: '' // Caption could be added here from an input
+                    });
+                } else {
+                    alert('File upload failed: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                alert('An error occurred during upload.');
+            }
         }
 
         // --- Socket.IO Event Handlers ---
@@ -154,7 +196,6 @@
         });
 
         socket.on('new_message', function(msg) {
-            // Render message received from server
             renderMessage(msg);
         });
 
@@ -162,9 +203,9 @@
         function sendMessage() {
             let message = messageInput.value;
             if (message.trim() !== '') {
-                socket.emit('send_message', {room: conversationId, message: message});
+                socket.emit('send_message', {room: conversationId, message: message, content_type: 'text'});
                 messageInput.value = '';
-                messageInput.dispatchEvent(new Event('input')); // Trigger input event to toggle buttons
+                messageInput.dispatchEvent(new Event('input'));
             }
         }
 
@@ -186,8 +227,47 @@
             }
         });
 
+        attachmentBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                uploadFile(file);
+            }
+        });
+
         // --- Initial State ---
         scrollToBottom();
     });
 </script>
+<style>
+    .msg-image {
+        max-width: 100%;
+        border-radius: 15px;
+        display: block;
+    }
+    .msg-caption {
+        padding-top: 8px;
+        font-size: 14px;
+        color: #ddd;
+    }
+    .msg-bubble .msg-caption {
+        color: #333;
+    }
+    .msg-file-link {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        background-color: rgba(0,0,0,0.1);
+        border-radius: 10px;
+        text-decoration: none;
+        color: inherit;
+    }
+    .msg-file-link i {
+        font-size: 24px;
+    }
+</style>
 {% endblock %}
