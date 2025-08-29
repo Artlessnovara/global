@@ -169,7 +169,7 @@ class Participant(db.Model):
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
     last_read_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     status = db.Column(db.String(20), default='active', nullable=False) # active, pending, blocked
-    role = db.Column(db.String(20), nullable=False, default='member') # 'admin' or 'member'
+    role = db.Column(db.String(20), nullable=False, default='member') # 'admin', 'member', 'host', 'co-host', 'listener'
     is_pinned = db.Column(db.Boolean, default=False, nullable=False)
     is_archived = db.Column(db.Boolean, default=False, nullable=False)
     user = db.relationship('User', back_populates='conversations')
@@ -187,6 +187,7 @@ class Conversation(db.Model):
     group_photo_path = db.Column(db.String(255), nullable=True)
     invite_code = db.Column(db.String(16), unique=True, default=lambda: secrets.token_urlsafe(12))
     is_invite_link_enabled = db.Column(db.Boolean, default=True)
+    is_public = db.Column(db.Boolean, default=False, nullable=False)
     disappearing_timer_seconds = db.Column(db.Integer, nullable=True)
     messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade="all, delete-orphan")
     participants = db.relationship('Participant', back_populates='conversation', cascade="all, delete-orphan")
@@ -1270,6 +1271,85 @@ def mark_notification_as_read(notification_id):
     db.session.commit()
     return {'success': True}, 200
 
+@app.route('/rooms/discover')
+@login_required
+def discover_rooms():
+    public_rooms = Conversation.query.filter_by(is_public=True).order_by(Conversation.created_at.desc()).all()
+    return render_template('discover_rooms.html', rooms=public_rooms)
+
+@app.route('/rooms/create', methods=['GET', 'POST'])
+@login_required
+def create_room():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        description = request.form.get('description', '')
+        if not name:
+            flash('Room name is required.', 'error')
+            return redirect(url_for('create_room'))
+
+        new_room = Conversation(
+            name=name,
+            description=description,
+            is_public=True,
+            is_group=True # Public rooms are a form of group chat
+        )
+        # The creator becomes the host
+        host_participant = Participant(
+            user=g.user,
+            conversation=new_room,
+            role='host'
+        )
+        db.session.add(new_room)
+        db.session.add(host_participant)
+        db.session.commit()
+
+        flash('Public room created successfully!', 'success')
+        return redirect(url_for('view_room', room_id=new_room.id))
+
+    return render_template('create_room.html')
+
+@app.route('/rooms/<int:room_id>')
+@login_required
+def view_room(room_id):
+    room = db.get_or_404(Conversation, room_id)
+    if not room.is_public:
+        flash('This is not a public room.', 'error')
+        return redirect(url_for('discover_rooms'))
+
+    # Check if user is a participant
+    participant = next((p for p in room.participants if p.user_id == g.user.id), None)
+
+    messages = room.messages.order_by(Message.created_at.asc()).all()
+
+    return render_template('room_view.html', room=room, messages=messages, participant=participant)
+
+@app.route('/rooms/join/<int:room_id>', methods=['POST'])
+@login_required
+def join_room(room_id):
+    room = db.get_or_404(Conversation, room_id)
+    if not room.is_public:
+        flash('This room is not public.', 'error')
+        return redirect(url_for('discover_rooms'))
+
+    # Check if user is already a participant
+    existing_participant = next((p for p in room.participants if p.user_id == g.user.id), None)
+    if existing_participant:
+        flash('You are already in this room.', 'info')
+        return redirect(url_for('view_room', room_id=room.id))
+
+    # Add user as a participant with the 'listener' role by default
+    new_participant = Participant(
+        user=g.user,
+        conversation=room,
+        role='listener'
+    )
+    db.session.add(new_participant)
+    db.session.commit()
+
+    flash('You have joined the room!', 'success')
+    return redirect(url_for('view_room', room_id=room.id))
+
+
 # --- SOCKETIO EVENTS ---
 @socketio.on('send_message')
 def handle_send_message_event(data):
@@ -1277,9 +1357,20 @@ def handle_send_message_event(data):
     if not user_id: return
     user = db.session.get(User, user_id)
     convo = db.get_or_404(Conversation, data['room'])
-    participant_users = [p.user for p in convo.participants]
-    if user not in participant_users:
+
+    # Check if the user is a participant by checking their ID
+    participant_user_ids = {p.user_id for p in convo.participants}
+    if user_id not in participant_user_ids:
+        # Special check for public rooms where a non-participant might be able to join and send
+        # For now, we restrict to participants
         return
+
+    # Additional check for public rooms: only certain roles can send messages
+    if convo.is_public:
+        participant = next((p for p in convo.participants if p.user_id == user_id), None)
+        if not participant or participant.role not in ['host', 'co-host', 'participant']:
+            return # Listeners cannot send messages
+
     new_message = Message(conversation_id=data['room'], user_id=user_id, body=data['message'])
     db.session.add(new_message)
     db.session.commit()
