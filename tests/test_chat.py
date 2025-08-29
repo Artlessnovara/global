@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime, timezone
 from tests.test_auth import register_user, login
-from app import db, User, Conversation, Message, Participant, socketio, Story
+from app import db, User, Conversation, Message, Participant, socketio, Story, Notification
 from datetime import date
 
 def test_start_new_chat(client):
@@ -120,6 +120,46 @@ def test_send_and_receive_media_message(app):
 
         c1.disconnect()
         c2.disconnect()
+
+def test_mention_notification(app):
+    """Test that a user receives a notification when mentioned in a group chat."""
+    with app.test_client() as client:
+        # Setup
+        user1 = User(id=1, full_name='User1', username='user1', email='u1@test.com', date_of_birth=date(2000, 1, 1))
+        user1.set_password('pw')
+        user2 = User(id=2, full_name='User2', username='user2', email='u2@test.com', date_of_birth=date(2000, 1, 1))
+        user2.set_password('pw')
+        convo = Conversation(id=1, is_group=True, name="Mention Test Group")
+        p1 = Participant(user=user1, conversation=convo)
+        p2 = Participant(user=user2, conversation=convo)
+        db.session.add_all([user1, user2, convo, p1, p2])
+        db.session.commit()
+
+        # Log in as user1
+        response = client.post('/login', data={'username': 'user1', 'password': 'pw'})
+        cookie = response.headers.get('Set-Cookie').split(';')[0]
+        socketio_client = socketio.test_client(app, headers={'Cookie': cookie})
+        assert socketio_client.is_connected()
+
+        # Send a message mentioning user2
+        message_text = "Hello @user2, how are you?"
+        socketio_client.emit('send_message', {
+            'room': str(convo.id),
+            'message': message_text,
+            'content_type': 'text'
+        })
+
+        # Give a moment for the event to be processed
+        import time
+        time.sleep(0.1)
+
+        # Verify that user2 received a notification
+        notification = Notification.query.filter_by(recipient_id=user2.id, type='mention').first()
+        assert notification is not None
+        assert notification.sender_id == user1.id
+        assert notification.related_id == convo.id
+
+        socketio_client.disconnect()
 
 def test_message_request_flow(client):
     """Test the full message request workflow."""
