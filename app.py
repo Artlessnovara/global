@@ -846,6 +846,18 @@ def reels():
     video_posts = Post.query.filter_by(content_type='video').order_by(Post.created_at.desc()).all()
     return render_template('reels.html', posts=video_posts)
 
+@app.route('/calls')
+@login_required
+def calls():
+    """Renders the placeholder page for calls."""
+    return render_template('calls.html')
+
+@app.route('/public_rooms')
+@login_required
+def public_rooms():
+    """Renders the placeholder page for public rooms."""
+    return render_template('public_room.html')
+
 @app.route('/modes/my')
 @login_required
 def my_modes():

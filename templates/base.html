@@ -6,53 +6,51 @@
     <title>{% block title %}GLOOBA{% endblock %}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script>
+        // Apply theme from localStorage before page load to prevent FOUC
+        (function() {
+            const theme = localStorage.getItem('theme');
+            if (theme === 'dark') {
+                document.documentElement.classList.add('dark-mode');
+            }
+        })();
+    </script>
 </head>
 <body>
-    {% if request.endpoint.startswith('chat_') or request.endpoint == 'message_thread' or request.endpoint == 'group_info' or request.endpoint == 'call_view' %}
+    {% if request.endpoint.startswith('chat_') or request.endpoint == 'message_thread' or request.endpoint == 'group_info' or request.endpoint == 'call_view' or request.endpoint == 'calls' or request.endpoint == 'public_rooms' %}
         {% block chat_header %}{% endblock %}
     {% else %}
-    <header class="top-bar">
-        <div class="top-bar-left">
+    <header class="app-header">
+        <div class="header-left">
             <a href="{{ url_for('home') }}" class="logo">GLOOBA</a>
         </div>
-        <div class="top-bar-center">
-            <div class="search-bar">
-                <i class="fas fa-search"></i>
-                <input type="text" placeholder="Search GLOOBA">
-            </div>
-        </div>
-        <div class="top-bar-right">
-            <a href="{{ url_for('chat_inbox') }}" class="icon-button">
-                <i class="fa-brands fa-facebook-messenger"></i>
+        <nav class="header-center">
+            <a href="{{ url_for('home') }}" class="nav-icon {% if request.endpoint == 'home' %}active{% endif %}" title="Home"><i class="fas fa-home"></i></a>
+            <a href="{{ url_for('suggestions') }}" class="nav-icon {% if request.endpoint == 'suggestions' %}active{% endif %}" title="Explore"><i class="fas fa-compass"></i></a>
+            <a href="{{ url_for('calls') }}" class="nav-icon {% if request.endpoint == 'calls' %}active{% endif %}" title="Calls"><i class="fas fa-phone"></i></a>
+            <a href="{{ url_for('reels') }}" class="nav-icon {% if request.endpoint == 'reels' %}active{% endif %}" title="Reels"><i class="fas fa-video"></i></a>
+            <a href="{{ url_for('create_choice') }}" class="nav-icon {% if request.endpoint == 'create_choice' %}active{% endif %}" title="Create"><i class="fas fa-plus-square"></i></a>
+        </nav>
+        <div class="header-right">
+            <a href="{{ url_for('chat_inbox') }}" class="nav-icon {% if request.endpoint.startswith('chat_') %}active{% endif %}" title="Chats">
+                <i class="fas fa-comment-dots"></i>
                 {% if total_unread_messages > 0 %}
                     <span class="unread-badge">{{ total_unread_messages }}</span>
                 {% endif %}
             </a>
-             <a href="{{ url_for('logout') }}" class="icon-button">
-                <i class="fa-solid fa-right-from-bracket"></i>
+            <a href="{{ url_for('notifications') }}" class="nav-icon {% if request.endpoint == 'notifications' %}active{% endif %}" title="Notifications">
+                <i class="fas fa-bell"></i>
+                {% if total_unread_notifications > 0 %}
+                    <span class="unread-badge">{{ total_unread_notifications }}</span>
+                {% endif %}
             </a>
+            <a href="{{ url_for('profile', username=g.user.username) }}" class="nav-icon {% if request.endpoint == 'profile' %}active{% endif %}" title="Profile"><i class="fas fa-user-circle"></i></a>
+             <a href="{{ url_for('more') }}" class="nav-icon {% if request.endpoint == 'more' %}active{% endif %}" title="More"><i class="fas fa-bars"></i></a>
         </div>
     </header>
-
-    {% if request.endpoint != 'reels' %}
-    <nav class="main-nav">
-        <a href="{{ url_for('home') }}" class="nav-icon {% if request.endpoint == 'home' %}active{% endif %}"><i class="fas fa-home"></i></a>
-        <a href="{{ url_for('suggestions') }}" class="nav-icon {% if request.endpoint == 'suggestions' %}active{% endif %}"><i class="fas fa-user-friends"></i></a>
-        <a href="{{ url_for('create_choice') }}" class="nav-icon {% if request.endpoint == 'create_choice' %}active{% endif %}"><i class="fas fa-plus-square"></i></a>
-        <a href="{{ url_for('reels') }}" class="nav-icon {% if request.endpoint == 'reels' %}active{% endif %}"><i class="fas fa-video"></i></a>
-        <a href="{{ url_for('profile', username=g.user.username) }}" class="nav-icon {% if request.endpoint == 'profile' %}active{% endif %}"><i class="fas fa-user-circle"></i></a>
-        <a href="{{ url_for('notifications') }}" class="nav-icon {% if request.endpoint == 'notifications' %}active{% endif %}">
-            <i class="fas fa-bell"></i>
-            {% if total_unread_notifications > 0 %}
-                <span class="unread-badge">{{ total_unread_notifications }}</span>
-            {% endif %}
-        </a>
-        <a href="{{ url_for('more') }}" class="nav-icon {% if request.endpoint == 'more' %}active{% endif %}"><i class="fas fa-bars"></i></a>
-    </nav>
-    {% endif %}
     {% endif %}
 
-    <main class="main-content {% if request.endpoint == 'reels' or request.endpoint.startswith('chat_') or request.endpoint == 'message_thread' or request.endpoint == 'group_info' or request.endpoint == 'call_view' %}full-screen{% endif %}">
+    <main class="main-content {% if request.endpoint == 'reels' or request.endpoint.startswith('chat_') or request.endpoint == 'message_thread' or request.endpoint == 'group_info' or request.endpoint == 'call_view' or request.endpoint == 'calls' or request.endpoint == 'public_rooms' %}full-screen{% endif %}">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 <div class="flash-messages">
@@ -66,6 +64,23 @@
     </main>
 
     <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const themeToggleButton = document.getElementById('theme-toggle-btn');
+            if (themeToggleButton) {
+                themeToggleButton.addEventListener('click', function () {
+                    const htmlElement = document.documentElement;
+                    htmlElement.classList.toggle('dark-mode');
+
+                    // Save the user's preference to localStorage
+                    if (htmlElement.classList.contains('dark-mode')) {
+                        localStorage.setItem('theme', 'dark');
+                    } else {
+                        localStorage.setItem('theme', 'light');
+                    }
+                });
+            }
+        });
+
         function openComposer() {
             document.getElementById('post-composer-modal').style.display = 'flex';
         }

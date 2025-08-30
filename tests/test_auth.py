@@ -82,8 +82,9 @@ def test_login_and_logout(client):
     register_user(username='loginuser', password='password')
 
     login_response = login(client, 'loginuser', 'password')
-    # A robust check is to see if the logout link is present
-    assert b'href="/logout"' in login_response.data
+    # After the nav refactor, the logout link is under the "More" menu.
+    # A better check for a logged-in state is to look for the profile link.
+    assert b'href="/profile/loginuser"' in login_response.data
 
     logout_response = logout(client)
     assert b'You have been logged out.' in logout_response.data
