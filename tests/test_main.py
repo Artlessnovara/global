@@ -23,7 +23,8 @@ def test_home_page_loads_for_logged_in_user(client):
 
     response = client.get('/home')
     assert response.status_code == 200
-    assert b'href="/logout"' in response.data
+    # After nav refactor, a better check is for the profile link.
+    assert b'href="/profile/testuser"' in response.data
 
 def test_create_and_view_post(client):
     """Test that a user can create a post and it appears on the home page."""

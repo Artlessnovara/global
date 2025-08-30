@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Public Rooms - GLOOBA{% endblock %}
+
+{% block chat_header %}
+<header class="chat-header-bar">
+    <div class="chat-header-left">
+        <a href="{{ url_for('home') }}" class="back-arrow">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <h1 class="chat-header-title">Public Rooms</h1>
+    </div>
+    <div class="chat-header-right">
+        <button class="icon-button">
+            <i class="fas fa-plus"></i>
+        </button>
+    </div>
+</header>
+{% endblock %}
+
+{% block content %}
+<div class="no-content-placeholder" style="padding-top: 80px;">
+    <i class="fas fa-users"></i>
+    <p>No public rooms available</p>
+    <p class="small-text" style="color: var(--secondary-text); font-size: 14px; max-width: 300px; margin: 10px auto;">When public rooms are created, they will be discoverable here.</p>
+</div>
+{% endblock %}
